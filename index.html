@@ -174,10 +174,17 @@
 
       // Supabase 클라이언트
       const supabase = useMemo(() => {
-        if (settings.supabaseUrl && settings.supabaseKey) {
-          return window.supabase.createClient(settings.supabaseUrl, settings.supabaseKey);
-        }
-        return null;
+  if (settings.supabaseUrl && settings.supabaseKey && settings.supabaseUrl.startsWith('http')) {
+    try {
+      return window.supabase.createClient(settings.supabaseUrl, settings.supabaseKey);
+    } catch (e) {
+      console.error('Supabase 연결 실패:', e);
+      return null;
+    }
+  }
+  return null;
+}, [settings.supabaseUrl, settings.supabaseKey]);
+
       }, [settings.supabaseUrl, settings.supabaseKey]);
 
       // API 사용량 기록 및 자동 키 전환
@@ -1554,4 +1561,5 @@
   </script>
 </body>
 </html>
+
 
