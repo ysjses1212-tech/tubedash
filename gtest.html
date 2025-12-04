@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="ko" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Research Dashboard (v7.6)</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        bg: { main: '#0f172a', card: '#1e293b', hover: '#334155' },
+                        primary: { DEFAULT: '#6366f1', hover: '#4f46e5' },
+                        text: { main: '#f8fafc', sub: '#94a3b8', muted: '#64748b' }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        .line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+        .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .toast-enter { animation: slideIn 0.3s forwards; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback } = React;
+        const { createClient } = supabase;
+
+        const ICONS = {
+            youtube: <g><path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17" /><path d="m10 15 5-3-5-3z" /></g>,
+            search: <g><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></g>,
+            settings: <g><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></g>,
+            x: <g><path d="M18 6 6 18" /><path d="m6 6 12 12" /></g>,
+            "loader-2": <path d="M21 12a9 9 0 1 1-6.219-8.56" />,
+            "layout-grid": <g><rect width="7" height="7" x="3" y="3" rx="1" /><rect width="7" height="7" x="14" y="3" rx="1" /><rect width="7" height="7" x="14" y="14" rx="1" /><rect width="7" height="7" x="3" y="14" rx="1" /></g>,
+            list: <g><line x1="8" x2="21" y1="6" y2="6" /><line x1="8" x2="21" y1="12" y2="12" /><line x1="8" x2="21" y1="18" y2="18" /><line x1="3" x2="3.01" y1="6" y2="6" /><line x1="3" x2="3.01" y1="12" y2="12" /><line x1="3" x2="3.01" y1="18" y2="18" /></g>,
+            "thumbs-up": <path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z" />,
+            calendar: <g><rect width="18" height="18" x="3" y="4" rx="2" ry="2" /><line x1="16" x2="16" y1="2" y2="6" /><line x1="8" x2="8" y1="2" y2="6" /><line x1="3" x2="21" y1="10" y2="10" /></g>,
+            folder: <g><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 2H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" /></g>,
+            bookmark: <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />,
+            "user-plus": <g><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="20" x2="20" y1="8" y2="14" /><line x1="23" x2="17" y1="11" y2="11" /></g>,
+            video: <g><path d="m22 8-6 4 6 4V8Z" /><rect x="2" y="6" width="14" height="12" rx="2" ry="2" /></g>,
+            users: <g><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></g>,
+            trash: <g><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></g>,
+            "arrow-left": <g><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></g>,
+            plus: <g><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></g>,
+            link: <g><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></g>,
+            check: <polyline points="20 6 9 17 4 12" />,
+            "folder-plus": <g><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 2H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" /><line x1="12" y1="10" x2="12" y2="16" /><line x1="9" y1="13" x2="15" y2="13" /></g>,
+            zap: <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />,
+            "alert-triangle": <g><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></g>,
+            "refresh-cw": <g><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></g>
+        };
+
+        const Icon = ({ name, size = 16, className = "" }) => {
+            const content = ICONS[name.toLowerCase()];
+            if (!content) return <span style={{width: size, height: size, display:'inline-block'}} />;
+            return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{content}</svg>;
+        };
+
+        const formatNumber = (num) => {
+            if (!num && num !== 0) return '-';
+            try { return new Intl.NumberFormat('ko-KR', { notation: "compact", maximumFractionDigits: 1 }).format(num); } catch(e) { return num; }
+        };
+
+        const formatDate = (dateString) => {
+            if (!dateString) return '-';
+            const date = new Date(dateString);
+            return `${date.getFullYear()}.${String(date.getMonth()+1).padStart(2,'0')}.${String(date.getDate()).padStart(2,'0')}`;
+        };
+
+        const parseDuration = (duration) => {
+            if (!duration) return '00:00';
+            const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
+            if (!match) return '00:00';
+            const h = (match[1] || '').replace('H', '');
+            const m = (match[2] || '').replace('M', '');
+            const s = (match[3] || '').replace('S', '');
+            return (h ? h + ':' : '') + m.padStart(2,'0') + ':' + s.padStart(2,'0');
+        };
+
+        const getDurationSeconds = (durationStr) => {
+            if (!durationStr) return 0;
+            const parts = durationStr.split(':').map(Number);
+            if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+            if (parts.length === 2) return parts[0] * 60 + parts[1];
+            return 0;
+        };
+
+        const extractChannelId = (input) => {
+            if (!input) return null;
+            input = input.trim();
+            if (/^UC[\w-]{22}$/.test(input)) return input;
+            const channelMatch = input.match(/youtube\.com\/channel\/(UC[\w-]{22})/);
+            if (channelMatch) return channelMatch[1];
+            const handleMatch = input.match(/youtube\.com\/@([\w.-]+)/);
+            if (handleMatch) return '@' + handleMatch[1];
+            if (input.startsWith('@')) return input;
+            if (/^[\w.-]+$/.test(input) && input.length > 2) return '@' + input;
+            return null;
+        };
+
+        const extractVideoId = (input) => {
+            if (!input) return null;
+            input = input.trim();
+            if (/^[\w-]{11}$/.test(input)) return input;
+            const watchMatch = input.match(/youtube\.com\/watch\?v=([\w-]{11})/);
+            if (watchMatch) return watchMatch[1];
+            const shortMatch = input.match(/youtu\.be\/([\w-]{11})/);
+            if (shortMatch) return shortMatch[1];
+            const shortsMatch = input.match(/youtube\.com\/shorts\/([\w-]{11})/);
+            if (shortsMatch) return shortsMatch[1];
+            return null;
+        };
+
+        const DAILY_QUOTA_LIMIT = 10000;
+
+        const getQuotaData = () => {
+            const saved = localStorage.getItem('tubeDashQuota');
+            if (saved) {
+                const data = JSON.parse(saved);
+                const today = new Date().toDateString();
+                if (data.date !== today) {
+                    return { total: data.total, today: 0, date: today };
+                }
+                return data;
+            }
+            return { total: 0, today: 0, date: new Date().toDateString() };
+        };
+
+        const saveQuotaData = (total, todayUsed) => {
+            const today = new Date().toDateString();
+            localStorage.setItem('tubeDashQuota', JSON.stringify({ total, today: todayUsed, date: today }));
+        };
+
+        const QuotaDisplay = ({ quotaData }) => {
+            const { today } = quotaData;
+            const todayPercent = Math.min((today / DAILY_QUOTA_LIMIT) * 100, 100);
+            const getBarColor = (percent) => {
+                if (percent < 50) return 'bg-emerald-500';
+                if (percent < 80) return 'bg-yellow-500';
+                return 'bg-red-500';
+            };
+            return (
+                <div className="flex items-center gap-2 bg-bg-card border border-gray-700 rounded-lg px-3 py-2">
+                    <Icon name="zap" size={14} className="text-yellow-500"/>
+                    <div className="w-24">
+                        <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                            <div className={`h-full ${getBarColor(todayPercent)} transition-all duration-500`} style={{ width: `${todayPercent}%` }} />
+                        </div>
+                    </div>
+                    <span className="text-xs font-mono text-gray-300">{today.toLocaleString()}</span>
+                </div>
+            );
+        };
+
+        const EstimatedQuota = ({ channelCount, isVisible }) => {
+            if (!isVisible || channelCount === 0) return null;
+            const estimated = channelCount * 100 + Math.ceil(channelCount * 10 / 50);
+            const isHigh = estimated > 1000;
+            const isVeryHigh = estimated > 3000;
+            return (
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium ${isVeryHigh ? 'bg-red-900/30 text-red-400 border border-red-800' : isHigh ? 'bg-yellow-900/30 text-yellow-400 border border-yellow-800' : 'bg-gray-800 text-gray-400 border border-gray-700'}`}>
+                    <Icon name={isVeryHigh ? 'alert-triangle' : 'zap'} size={12}/>
+                    <span>예상: <strong>~{estimated.toLocaleString()}</strong> <span className="opacity-60">({channelCount}ch)</span></span>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [logs, setLogs] = useState([]);
+            const [viewMode, setViewMode] = useState('card');
+            const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+            const [toast, setToast] = useState(null);
+            const [isLoading, setIsLoading] = useState(false);
+            const [error, setError] = useState(null);
+            const [quotaData, setQuotaData] = useState({ total: 0, today: 0, date: '' });
+            const [currentTab, setCurrentTab] = useState('search');
+            const [searchText, setSearchText] = useState('');
+            const [searchVideos, setSearchVideos] = useState([]);
+            const [nextPageToken, setNextPageToken] = useState(null);
+            const [savedVideos, setSavedVideos] = useState([]);
+            const [savedChannels, setSavedChannels] = useState([]);
+            const [channelAnalysisVideos, setChannelAnalysisVideos] = useState([]);
+            const [isChannelAnalysisActive, setIsChannelAnalysisActive] = useState(false);
+            const [searchFilters, setSearchFilters] = useState({ type: 'all', date: 'all', subscriber: 'all', viewCount: 'all' });
+            const [analysisFilters, setAnalysisFilters] = useState({ type: 'all', date: 'all', viewCount: 'all' });
+            const [selectedCategory, setSelectedCategory] = useState('전체');
+            const [savedVideoIds, setSavedVideoIds] = useState(new Set());
+            const [savedChannelIds, setSavedChannelIds] = useState(new Set());
+            const [settings, setSettings] = useState({ youtubeApiKey: '', supabaseUrl: '', supabaseKey: '' });
+            
+            // 채널 추가 모달
+            const [isAddChannelOpen, setIsAddChannelOpen] = useState(false);
+            const [channelInput, setChannelInput] = useState('');
+            const [isAddingChannel, setIsAddingChannel] = useState(false);
+            
+            // 영상 추가 모달
+            const [isAddVideoOpen, setIsAddVideoOpen] = useState(false);
+            const [videoInput, setVideoInput] = useState('');
+            const [isAddingVideo, setIsAddingVideo] = useState(false);
+            
+            // 채널 카테고리 모달
+            const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+            const [pendingChannelData, setPendingChannelData] = useState(null);
+            const [selectedCategoryForSave, setSelectedCategoryForSave] = useState('');
+            const [newCategoryName, setNewCategoryName] = useState('');
+            const [isCreatingNewCategory, setIsCreatingNewCategory] = useState(false);
+            
+            // 영상 보관함 필터
+            const [selectedVideoCategory, setSelectedVideoCategory] = useState('전체');
+            const [videoTypeFilter, setVideoTypeFilter] = useState('all');
+            
+            // 영상 카테고리 모달
+            const [isVideoCategoryModalOpen, setIsVideoCategoryModalOpen] = useState(false);
+            const [pendingVideoData, setPendingVideoData] = useState(null);
+
+            const addLog = (msg, type = 'info') => {
+                const time = new Date().toLocaleTimeString();
+                setLogs(prev => [`[${time}] ${msg}`, ...prev]);
+                if (type === 'error') console.error(msg); else console.log(msg);
+            };
+
+            const showToast = (msg, type = 'success') => {
+                setToast({ msg, type });
+                setTimeout(() => setToast(null), 3000);
+            };
+
+            const addQuota = (cost) => {
+                setQuotaData(prev => {
+                    const newData = { total: prev.total + cost, today: prev.today + cost, date: prev.date || new Date().toDateString() };
+                    saveQuotaData(newData.total, newData.today);
+                    return newData;
+                });
+            };
+
+            const resetQuota = () => {
+                if (confirm('API 사용량 기록을 초기화하시겠습니까?\n(실제 YouTube 할당량은 초기화되지 않습니다)')) {
+                    const newData = { total: 0, today: 0, date: new Date().toDateString() };
+                    setQuotaData(newData);
+                    saveQuotaData(0, 0);
+                    showToast('사용량 기록이 초기화되었습니다.');
+                    addLog('쿼터 기록 초기화됨');
+                }
+            };
+
+            useEffect(() => {
+                const loadedQuota = getQuotaData();
+                setQuotaData(loadedQuota);
+                addLog(`쿼터 로드: 오늘 ${loadedQuota.today} / 누적 ${loadedQuota.total}`);
+                const saved = localStorage.getItem('tubeDashSettings');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    setSettings(parsed);
+                    addLog(`설정 로드 완료.`);
+                    if (parsed.supabaseUrl && parsed.supabaseKey) fetchSavedIDs(parsed.supabaseUrl, parsed.supabaseKey);
+                } else {
+                    addLog("설정 키가 없습니다. 설정해주세요.");
+                    setIsSettingsOpen(true);
+                }
+            }, []);
+
+            const fetchSavedIDs = async (url, key) => {
+                const supabase = createClient(url, key);
+                const { data: vData } = await supabase.from('video_assets').select('video_id');
+                if (vData) setSavedVideoIds(new Set(vData.map(v => v.video_id)));
+                const { data: cData } = await supabase.from('channel_assets').select('channel_id');
+                if (cData) setSavedChannelIds(new Set(cData.map(c => c.channel_id)));
+            };
+
+            const handleSaveSettings = (newSettings) => {
+                setSettings(newSettings);
+                localStorage.setItem('tubeDashSettings', JSON.stringify(newSettings));
+                setIsSettingsOpen(false);
+                addLog("설정 저장됨.");
+                fetchSavedIDs(newSettings.supabaseUrl, newSettings.supabaseKey);
+            };
+
+            // 채널 카테고리 관련
+            const getExistingCategories = () => {
+                const categories = savedChannels.map(c => c.category).filter(c => c);
+                return [...new Set(categories)];
+            };
+
+            const openCategoryModal = (channelData) => {
+                setPendingChannelData(channelData);
+                setSelectedCategoryForSave(channelData.category || '');
+                setNewCategoryName('');
+                setIsCreatingNewCategory(false);
+                setIsCategoryModalOpen(true);
+            };
+
+            const confirmSaveChannel = async () => {
+                if (!pendingChannelData) return;
+                let finalCategory = isCreatingNewCategory ? newCategoryName.trim() : selectedCategoryForSave;
+                if (!finalCategory) { showToast('카테고리를 선택하거나 새로 만들어주세요.', 'error'); return; }
+
+                const supabase = createClient(settings.supabaseUrl, settings.supabaseKey);
+                try {
+                    if (pendingChannelData.isEdit) {
+                        const { error } = await supabase.from('channel_assets').update({ category: finalCategory }).eq('id', pendingChannelData.dbId);
+                        if (error) throw error;
+                        showToast(`카테고리가 [${finalCategory}]로 변경되었습니다!`);
+                        fetchSavedAssets('channel');
+                    } else {
+                        const { error } = await supabase.from('channel_assets').insert([{
+                            channel_id: pendingChannelData.channelId, channel_title: pendingChannelData.channelTitle,
+                            thumbnail: pendingChannelData.thumbnail, subscriber_count: pendingChannelData.subscriberCount, category: finalCategory
+                        }]);
+                        if (error) throw error;
+                        setSavedChannelIds(prev => new Set(prev).add(pendingChannelData.channelId));
+                        showToast(`[${finalCategory}] 채널 저장 완료!`);
+                        if (currentTab === 'saved_channel') fetchSavedAssets('channel');
+                    }
+                    setIsCategoryModalOpen(false);
+                    setPendingChannelData(null);
+                } catch (err) { showToast('오류: ' + err.message, 'error'); }
+            };
+
+            const handleChangeCategory = (channel) => {
+                setPendingChannelData({ ...channel, isEdit: true });
+                setSelectedCategoryForSave(channel.category || '');
+                setNewCategoryName('');
+                setIsCreatingNewCategory(false);
+                setIsCategoryModalOpen(true);
+            };
+
+            // 영상 카테고리 관련
+            const getExistingVideoCategories = () => {
+                const categories = savedVideos.map(v => v.category).filter(c => c);
+                return [...new Set(categories)];
+            };
+
+            const openVideoCategoryModal = (video, isEdit = false) => {
+                setPendingVideoData({ ...video, isEdit });
+                setSelectedCategoryForSave(video.category || '');
+                setNewCategoryName('');
+                setIsCreatingNewCategory(false);
+                setIsVideoCategoryModalOpen(true);
+            };
+
+            const confirmSaveVideoWithCategory = async () => {
+                if (!pendingVideoData) return;
+                let finalCategory = isCreatingNewCategory ? newCategoryName.trim() : selectedCategoryForSave;
+                if (!finalCategory) { showToast('카테고리를 선택하거나 새로 만들어주세요.', 'error'); return; }
+
+                const supabase = createClient(settings.supabaseUrl, settings.supabaseKey);
+                try {
+                    if (pendingVideoData.isEdit) {
+                        const { error } = await supabase.from('video_assets').update({ category: finalCategory }).eq('id', pendingVideoData.dbId);
+                        if (error) throw error;
+                        showToast(`카테고리가 [${finalCategory}]로 변경되었습니다!`);
+                    } else {
+                        const { error } = await supabase.from('video_assets').insert([{
+                            video_id: pendingVideoData.id, title: pendingVideoData.title, description: pendingVideoData.description,
+                            thumbnail: pendingVideoData.thumbnail, channel_title: pendingVideoData.channelTitle, channel_id: pendingVideoData.channelId,
+                            view_count: pendingVideoData.viewCount, like_count: pendingVideoData.likeCount, comment_count: pendingVideoData.commentCount,
+                            subscriber_count: pendingVideoData.subscriberCount, published_at: pendingVideoData.publishedAt,
+                            duration: pendingVideoData.formattedDuration, tags: pendingVideoData.tags || [], category: finalCategory
+                        }]);
+                        if (error) throw error;
+                        setSavedVideoIds(prev => new Set(prev).add(pendingVideoData.id));
+                        showToast(`[${finalCategory}] 영상 저장 완료!`);
+                    }
+                    setIsVideoCategoryModalOpen(false);
+                    setPendingVideoData(null);
+                    if (currentTab === 'saved_video') fetchSavedAssets('video');
+                } catch (err) { showToast('오류: ' + err.message, 'error'); }
+            };
+
+            const handleChangeVideoCategory = (video) => {
+                openVideoCategoryModal(video, true);
+            };
+
+            const handleSaveVideo = async (video) => {
+                if (!settings.supabaseUrl) return alert("설정 필요");
+                if (savedVideoIds.has(video.id)) return showToast('이미 저장된 영상입니다.', 'error');
+                openVideoCategoryModal(video, false);
+            };
+
+            const handleSaveChannel = async (video) => {
+                if (!settings.supabaseUrl) return alert("설정 필요");
+                if (savedChannelIds.has(video.channelId)) return showToast('이미 저장된 채널입니다.', 'error');
+                openCategoryModal({
+                    channelId: video.channelId, channelTitle: video.channelTitle,
+                    thumbnail: video.channelThumbnail, subscriberCount: video.subscriberCount
+                });
+            };
+
+            const handleAddChannelByUrl = async () => {
+                if (!channelInput.trim()) { showToast('채널 URL 또는 ID를 입력해주세요.', 'error'); return; }
+                if (!settings.youtubeApiKey) { showToast('YouTube API 키가 필요합니다.', 'error'); return; }
+
+                setIsAddingChannel(true);
+                const baseUrl = 'https://www.googleapis.com/youtube/v3';
+                try {
+                    const extracted = extractChannelId(channelInput);
+                    if (!extracted) { showToast('유효한 채널 URL/ID가 아닙니다.', 'error'); setIsAddingChannel(false); return; }
+
+                    addLog(`채널 조회 중: ${extracted}`);
+                    let channelId = extracted;
+
+                    if (extracted.startsWith('@')) {
+                        const handleName = extracted.substring(1);
+                        const searchUrl = `${baseUrl}/search?part=snippet&type=channel&q=${encodeURIComponent(handleName)}&maxResults=5&key=${settings.youtubeApiKey}`;
+                        const searchRes = await fetch(searchUrl);
+                        const searchData = await searchRes.json();
+                        addQuota(100);
+                        if (searchData.error) throw new Error(searchData.error.message);
+                        const matchedChannel = searchData.items?.find(item => {
+                            const customUrl = item.snippet.customUrl?.toLowerCase();
+                            return customUrl === handleName.toLowerCase() || customUrl === '@' + handleName.toLowerCase();
+                        }) || searchData.items?.[0];
+                        if (!matchedChannel) { showToast('채널을 찾을 수 없습니다.', 'error'); setIsAddingChannel(false); return; }
+                        channelId = matchedChannel.snippet.channelId;
+                    }
+
+                    if (savedChannelIds.has(channelId)) { showToast('이미 저장된 채널입니다.', 'error'); setIsAddingChannel(false); return; }
+
+                    const channelUrl = `${baseUrl}/channels?part=snippet,statistics&id=${channelId}&key=${settings.youtubeApiKey}`;
+                    const channelRes = await fetch(channelUrl);
+                    const channelData = await channelRes.json();
+                    addQuota(1);
+
+                    if (channelData.error) throw new Error(channelData.error.message);
+                    if (!channelData.items?.length) { showToast('채널을 찾을 수 없습니다.', 'error'); setIsAddingChannel(false); return; }
+
+                    const channel = channelData.items[0];
+                    addLog(`채널 발견: ${channel.snippet.title}`);
+                    setIsAddChannelOpen(false);
+                    setChannelInput('');
+                    openCategoryModal({
+                        channelId: channel.id, channelTitle: channel.snippet.title,
+                        thumbnail: channel.snippet.thumbnails.default?.url,
+                        subscriberCount: parseInt(channel.statistics.subscriberCount || 0)
+                    });
+                } catch (err) { addLog(`에러: ${err.message}`, 'error'); showToast('채널 조회 실패: ' + err.message, 'error'); }
+                finally { setIsAddingChannel(false); }
+            };
+
+            const handleAddVideoByUrl = async () => {
+                if (!videoInput.trim()) { showToast('영상 URL 또는 ID를 입력해주세요.', 'error'); return; }
+                if (!settings.youtubeApiKey) { showToast('YouTube API 키가 필요합니다.', 'error'); return; }
+
+                setIsAddingVideo(true);
+                const baseUrl = 'https://www.googleapis.com/youtube/v3';
+                try {
+                    const videoId = extractVideoId(videoInput);
+                    if (!videoId) { showToast('유효한 영상 URL/ID가 아닙니다.', 'error'); setIsAddingVideo(false); return; }
+                    if (savedVideoIds.has(videoId)) { showToast('이미 저장된 영상입니다.', 'error'); setIsAddingVideo(false); return; }
+
+                    addLog(`영상 조회 중: ${videoId}`);
+                    const videoUrl = `${baseUrl}/videos?part=snippet,statistics,contentDetails&id=${videoId}&key=${settings.youtubeApiKey}`;
+                    const videoRes = await fetch(videoUrl);
+                    const videoData = await videoRes.json();
+                    addQuota(1);
+
+                    if (videoData.error) throw new Error(videoData.error.message);
+                    if (!videoData.items?.length) { showToast('영상을 찾을 수 없습니다.', 'error'); setIsAddingVideo(false); return; }
+
+                    const item = videoData.items[0];
+                    const channelUrl = `${baseUrl}/channels?part=statistics&id=${item.snippet.channelId}&key=${settings.youtubeApiKey}`;
+                    const channelRes = await fetch(channelUrl);
+                    const channelData = await channelRes.json();
+                    addQuota(1);
+
+                    const subscriberCount = parseInt(channelData.items?.[0]?.statistics?.subscriberCount || 0);
+                    setIsAddVideoOpen(false);
+                    setVideoInput('');
+                    openVideoCategoryModal({
+                        id: videoId, title: item.snippet.title, description: item.snippet.description,
+                        thumbnail: item.snippet.thumbnails.medium?.url, channelTitle: item.snippet.channelTitle,
+                        channelId: item.snippet.channelId, viewCount: parseInt(item.statistics.viewCount || 0),
+                        likeCount: parseInt(item.statistics.likeCount || 0), commentCount: parseInt(item.statistics.commentCount || 0),
+                        subscriberCount, publishedAt: item.snippet.publishedAt,
+                        formattedDuration: parseDuration(item.contentDetails.duration), tags: item.snippet.tags || []
+                    }, false);
+                } catch (err) { addLog(`에러: ${err.message}`, 'error'); showToast('영상 조회 실패: ' + err.message, 'error'); }
+                finally { setIsAddingVideo(false); }
+            };
+
+            const handleDelete = async (id, table, realId) => {
+                if (!confirm("정말 삭제하시겠습니까?")) return;
+                const supabase = createClient(settings.supabaseUrl, settings.supabaseKey);
+                try {
+                    const { error } = await supabase.from(table).delete().eq('id', id);
+                    if (error) throw error;
+                    showToast('삭제되었습니다.');
+                    if (table === 'video_assets') {
+                        const newSet = new Set(savedVideoIds); newSet.delete(realId); setSavedVideoIds(newSet);
+                        if (currentTab === 'saved_video') fetchSavedAssets('video');
+                    } else {
+                        const newSet = new Set(savedChannelIds); newSet.delete(realId); setSavedChannelIds(newSet);
+                        if (currentTab === 'saved_channel') fetchSavedAssets('channel');
+                    }
+                } catch (err) { showToast('삭제 실패', 'error'); }
+            };
+
+            const fetchSavedAssets = async (target) => {
+                if (!settings.supabaseUrl) return;
+                setIsLoading(true);
+                if (target === 'video') setCurrentTab('saved_video');
+                else if (target === 'channel') { setCurrentTab('saved_channel'); setIsChannelAnalysisActive(false); }
+
+                const supabase = createClient(settings.supabaseUrl, settings.supabaseKey);
+                try {
+                    if (target === 'video' || !target) {
+                        const { data } = await supabase.from('video_assets').select('*').order('created_at', { ascending: false });
+                        setSavedVideos((data || []).map(item => ({
+                            dbId: item.id, id: item.video_id, title: item.title, description: item.description,
+                            thumbnail: item.thumbnail, channelTitle: item.channel_title, channelId: item.channel_id,
+                            viewCount: item.view_count, likeCount: item.like_count, commentCount: item.comment_count,
+                            subscriberCount: item.subscriber_count, publishedAt: item.published_at,
+                            formattedDuration: item.duration, tags: item.tags || [], category: item.category || '일반'
+                        })));
+                    }
+                    if (target === 'channel' || !target) {
+                        const { data } = await supabase.from('channel_assets').select('*').order('created_at', { ascending: false });
+                        setSavedChannels((data || []).map(item => ({
+                            dbId: item.id, channelId: item.channel_id, channelTitle: item.channel_title,
+                            thumbnail: item.thumbnail, subscriberCount: item.subscriber_count, category: item.category
+                        })));
+                    }
+                } catch (err) { addLog(`로드 실패: ${err.message}`, 'error'); }
+                finally { setIsLoading(false); }
+            };
+
+            const analyzeChannelVideos = async () => {
+                const targetChannels = savedChannels.filter(c => selectedCategory === '전체' || c.category === selectedCategory);
+                if (targetChannels.length === 0) return alert("분석할 채널이 없습니다.");
+
+                const estimatedCost = targetChannels.length * 100 + Math.ceil(targetChannels.length * 10 / 50);
+                if (estimatedCost > 2000 && !confirm(`약 ${estimatedCost.toLocaleString()} 쿼터가 소모됩니다. 진행할까요?`)) return;
+
+                setIsLoading(true);
+                setChannelAnalysisVideos([]);
+                setIsChannelAnalysisActive(true);
+                addLog(`--- 채널 ${targetChannels.length}개 분석 시작 ---`);
+
+                const baseUrl = 'https://www.googleapis.com/youtube/v3';
+                let totalQuotaCost = 0;
+                let allRawItems = [];
+
+                try {
+                    let publishedAfter = '';
+                    if (analysisFilters.date !== 'all') {
+                        const now = new Date();
+                        if (analysisFilters.date === '1d') now.setDate(now.getDate() - 1);
+                        else if (analysisFilters.date === '3d') now.setDate(now.getDate() - 3);
+                        else if (analysisFilters.date === '1m') now.setMonth(now.getMonth() - 1);
+                        else if (analysisFilters.date === '6m') now.setMonth(now.getMonth() - 6);
+                        publishedAfter = `&publishedAfter=${now.toISOString()}`;
+                    }
+
+                    for (const channel of targetChannels) {
+                        let searchUrl = `${baseUrl}/search?part=snippet&channelId=${channel.channelId}&order=date&type=video&maxResults=10&key=${settings.youtubeApiKey}`;
+                        if (publishedAfter) searchUrl += publishedAfter;
+                        try {
+                            const res = await fetch(searchUrl);
+                            if (!res.ok) continue;
+                            const data = await res.json();
+                            totalQuotaCost += 100;
+                            if (data.items) allRawItems = [...allRawItems, ...data.items];
+                            await new Promise(resolve => setTimeout(resolve, 100));
+                        } catch (innerErr) { console.error(innerErr); }
+                    }
+
+                    if (allRawItems.length === 0) {
+                        addLog("조건에 맞는 영상이 없거나 API 한도가 초과되었습니다.");
+                        addQuota(totalQuotaCost);
+                        setIsLoading(false);
+                        return;
+                    }
+
+                    const videoIdsList = allRawItems.map(item => item.id.videoId);
+                    let allDetails = [];
+                    for (let i = 0; i < videoIdsList.length; i += 50) {
+                        const chunk = videoIdsList.slice(i, i + 50).join(',');
+                        const videosUrl = `${baseUrl}/videos?part=contentDetails,statistics,snippet,liveStreamingDetails&id=${chunk}&key=${settings.youtubeApiKey}`;
+                        const res = await fetch(videosUrl);
+                        const data = await res.json();
+                        if (data.items) allDetails = [...allDetails, ...data.items];
+                        totalQuotaCost += 1;
+                    }
+
+                    const newVideos = allDetails.map(item => ({
+                        id: item.id, title: item.snippet.title, description: item.snippet.description,
+                        thumbnail: item.snippet.thumbnails.medium?.url, publishedAt: item.snippet.publishedAt,
+                        channelTitle: item.snippet.channelTitle, channelId: item.snippet.channelId,
+                        viewCount: parseInt(item.statistics.viewCount || 0), likeCount: parseInt(item.statistics.likeCount || 0),
+                        commentCount: parseInt(item.statistics.commentCount || 0), subscriberCount: 0,
+                        duration: item.contentDetails.duration, formattedDuration: parseDuration(item.contentDetails.duration),
+                        tags: item.snippet.tags || [], liveBroadcastContent: item.snippet.liveBroadcastContent,
+                        isLiveContent: !!item.liveStreamingDetails
+                    })).filter(v => {
+                        if (v.liveBroadcastContent !== 'none' || v.isLiveContent) return false;
+                        const views = v.viewCount;
+                        if (analysisFilters.viewCount === 'u10k' && views > 10000) return false;
+                        if (analysisFilters.viewCount === 'o10k' && views < 10000) return false;
+                        if (analysisFilters.viewCount === 'o100k' && views < 100000) return false;
+                        if (analysisFilters.viewCount === 'o500k' && views < 500000) return false;
+                        if (analysisFilters.viewCount === 'o1m' && views < 1000000) return false;
+                        const sec = getDurationSeconds(v.formattedDuration);
+                        if (analysisFilters.type === 'shorts' && sec >= 180) return false;
+                        if (analysisFilters.type === 'long' && sec < 180) return false;
+                        return true;
+                    });
+
+                    newVideos.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+                    setChannelAnalysisVideos(newVideos);
+                    addQuota(totalQuotaCost);
+                    addLog(`분석 완료: ${newVideos.length}개 (쿼터: ${totalQuotaCost})`);
+                } catch (err) { addLog(`오류: ${err.message}`, 'error'); }
+                finally { setIsLoading(false); }
+            };
+
+            const performSearch = async (isLoadMoreFlag) => {
+                const isLoadMore = (isLoadMoreFlag === true);
+                if (currentTab !== 'search' && !isLoadMore) setCurrentTab('search');
+                if (!settings.youtubeApiKey) return alert("API 키 필요");
+
+                setIsLoading(true);
+                setError(null);
+                if (!isLoadMore) { setSearchVideos([]); setNextPageToken(null); addLog(`--- 검색 시작 ---`); }
+
+                const baseUrl = 'https://www.googleapis.com/youtube/v3';
+                let currentQuota = 0;
+
+                try {
+                    let initialUrl = '';
+                    let baseParams = `part=snippet&type=video&maxResults=50&key=${settings.youtubeApiKey}`;
+                    if (isLoadMore && nextPageToken) baseParams += `&pageToken=${nextPageToken}`;
+
+                    if (searchText.trim()) {
+                        initialUrl = `${baseUrl}/search?${baseParams}&q=${encodeURIComponent(searchText)}`;
+                        if (searchFilters.date !== 'all') {
+                            const now = new Date();
+                            if (searchFilters.date === '1d') now.setDate(now.getDate() - 1);
+                            else if (searchFilters.date === '3d') now.setDate(now.getDate() - 3);
+                            else if (searchFilters.date === '1m') now.setMonth(now.getMonth() - 1);
+                            else if (searchFilters.date === '6m') now.setMonth(now.getMonth() - 6);
+                            initialUrl += `&publishedAfter=${now.toISOString()}`;
+                        }
+                        if (searchFilters.type === 'shorts') initialUrl += `&videoDuration=short`;
+                        if (searchFilters.viewCount.startsWith('o')) initialUrl += `&order=viewCount`;
+                        else initialUrl += `&order=relevance`;
+                        currentQuota += 100;
+                        addLog(`search API 호출 (100 쿼터)`);
+                    } else {
+                        let chartParams = `part=snippet&chart=mostPopular&maxResults=50&regionCode=US&key=${settings.youtubeApiKey}`;
+                        if (isLoadMore && nextPageToken) chartParams += `&pageToken=${nextPageToken}`;
+                        initialUrl = `${baseUrl}/videos?${chartParams}`;
+                        currentQuota += 1;
+                        addLog(`videos.list(mostPopular) 호출 (1 쿼터)`);
+                    }
+
+                    const res1 = await fetch(initialUrl);
+                    const data1 = await res1.json();
+                    if (data1.error) throw new Error(data1.error.message);
+
+                    const items = data1.items || [];
+                    setNextPageToken(data1.nextPageToken || null);
+                    if (items.length === 0) { if (!isLoadMore) setSearchVideos([]); addQuota(currentQuota); setIsLoading(false); return; }
+
+                    const videoIds = items.map(item => (item.id?.videoId) || (typeof item.id === 'string' ? item.id : null)).filter(Boolean).join(',');
+                    const channelIds = [...new Set(items.map(item => item.snippet.channelId))].join(',');
+
+                    const videosUrl = `${baseUrl}/videos?part=contentDetails,statistics,snippet,liveStreamingDetails&id=${videoIds}&key=${settings.youtubeApiKey}`;
+                    const res2 = await fetch(videosUrl);
+                    const data2 = await res2.json();
+                    currentQuota += 1;
+
+                    const channelsUrl = `${baseUrl}/channels?part=statistics,snippet&id=${channelIds}&key=${settings.youtubeApiKey}`;
+                    const res3 = await fetch(channelsUrl);
+                    const data3 = await res3.json();
+                    currentQuota += 1;
+
+                    const vMap = new Map(data2.items?.map(i => [i.id, i]));
+                    const cMap = new Map(data3.items?.map(i => [i.id, i]));
+
+                    const newVideos = items.map(item => {
+                        const vid = item.id?.videoId || item.id;
+                        const vDetail = vMap.get(vid);
+                        const cDetail = cMap.get(item.snippet.channelId);
+                        if (!vDetail) return null;
+                        return {
+                            id: vid, title: item.snippet.title, description: item.snippet.description,
+                            thumbnail: item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url,
+                            publishedAt: item.snippet.publishedAt, channelTitle: item.snippet.channelTitle,
+                            channelId: item.snippet.channelId, channelThumbnail: cDetail?.snippet?.thumbnails?.default?.url,
+                            subscriberCount: parseInt(cDetail?.statistics?.subscriberCount || 0),
+                            viewCount: parseInt(vDetail.statistics.viewCount || 0),
+                            likeCount: parseInt(vDetail.statistics.likeCount || 0),
+                            commentCount: parseInt(vDetail.statistics.commentCount || 0),
+                            duration: vDetail.contentDetails.duration,
+                            formattedDuration: parseDuration(vDetail.contentDetails.duration),
+                            tags: vDetail.snippet.tags || [],
+                            liveBroadcastContent: vDetail.snippet.liveBroadcastContent,
+                            isLiveContent: !!vDetail.liveStreamingDetails
+                        };
+                    }).filter(Boolean);
+
+                    if (isLoadMore) { setSearchVideos(prev => [...prev, ...newVideos]); addLog(`+ ${newVideos.length}개 추가 (쿼터: ${currentQuota})`); }
+                    else { setSearchVideos(newVideos); addLog(`완료: ${newVideos.length}개 (쿼터: ${currentQuota})`); }
+                    addQuota(currentQuota);
+                } catch (err) { addLog(`에러: ${err.message}`, 'error'); setError(err.message); }
+                finally { setIsLoading(false); }
+            };
+
+            const filteredSearchVideos = searchVideos.filter(v => {
+                if (v.liveBroadcastContent !== 'none' || v.isLiveContent || v.duration === 'P0D') return false;
+                const sec = getDurationSeconds(v.formattedDuration);
+                if (searchFilters.type === 'shorts' && sec >= 180) return false;
+                if (searchFilters.type === 'long' && sec < 180) return false;
+                const sub = v.subscriberCount;
+                if (searchFilters.subscriber === 'u5k' && sub > 5000) return false;
+                if (searchFilters.subscriber === 'o10k' && sub < 10000) return false;
+                if (searchFilters.subscriber === 'o50k' && sub < 50000) return false;
+                if (searchFilters.subscriber === 'o100k' && sub < 100000) return false;
+                if (searchFilters.subscriber === 'o1m' && sub < 1000000) return false;
+                const views = v.viewCount;
+                if (searchFilters.viewCount === 'u10k' && views > 10000) return false;
+                if (searchFilters.viewCount === 'o10k' && views < 10000) return false;
+                if (searchFilters.viewCount === 'o100k' && views < 100000) return false;
+                if (searchFilters.viewCount === 'o500k' && views < 500000) return false;
+                if (searchFilters.viewCount === 'o1m' && views < 1000000) return false;
+                return true;
+            });
+
+            const targetChannelCount = savedChannels.filter(c => selectedCategory === '전체' || c.category === selectedCategory).length;
+
+            let currentList = [];
+            if (currentTab === 'search') {
+                currentList = filteredSearchVideos;
+            } else if (currentTab === 'saved_video') {
+                currentList = savedVideos.filter(v => {
+                    if (selectedVideoCategory !== '전체' && v.category !== selectedVideoCategory) return false;
+                    if (videoTypeFilter !== 'all') {
+                        const sec = getDurationSeconds(v.formattedDuration);
+                        if (videoTypeFilter === 'shorts' && sec >= 180) return false;
+                        if (videoTypeFilter === 'long' && sec < 180) return false;
+                    }
+                    return true;
+                });
+            } else if (currentTab === 'saved_channel') {
+                if (isChannelAnalysisActive) currentList = channelAnalysisVideos;
+                else currentList = savedChannels.filter(c => selectedCategory === '전체' || c.category === selectedCategory);
+            }
+
+            return (
+                <div className="min-h-screen pb-8 relative">
+                    <nav className="sticky top-0 z-40 bg-bg-main/90 backdrop-blur border-b border-gray-800 shadow-sm">
+                        <div className="container mx-auto px-4 h-16 flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-2 text-primary font-bold text-xl cursor-pointer" onClick={() => window.location.reload()}>
+                                <Icon name="youtube" size={24} /> TubeDash
+                            </div>
+                            <div className="flex-1 max-w-2xl relative flex gap-2">
+                                <input type="text" value={searchText} onChange={(e) => setSearchText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') performSearch(false); }} placeholder="검색어 입력 (비워두면 인기 동영상)" className="w-full bg-bg-card border border-gray-700 rounded-lg pl-4 py-2 text-sm text-white focus:border-primary focus:outline-none" />
+                                <button onClick={() => performSearch(false)} className="bg-primary hover:bg-primary-hover text-white px-4 rounded-lg font-medium whitespace-nowrap transition flex items-center gap-1">
+                                    <Icon name="search" size={16} /> 검색
+                                </button>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <QuotaDisplay quotaData={quotaData} />
+                                <button onClick={() => setIsSettingsOpen(true)} className="p-2 hover:bg-gray-800 rounded-full text-text-sub hover:text-white">
+                                    <Icon name="settings" size={20} />
+                                </button>
+                            </div>
+                        </div>
+                    </nav>
+
+                    <div className="container mx-auto px-4 py-6">
+                        <div className="flex flex-col gap-4 mb-6">
+                            <div className="flex items-center gap-2 border-b border-gray-700 pb-1">
+                                <button onClick={() => setCurrentTab('search')} className={`px-4 py-2 text-sm font-bold border-b-2 transition ${currentTab === 'search' ? 'border-primary text-white' : 'border-transparent text-text-sub hover:text-white'}`}>
+                                    <Icon name="search" size={14} className="inline mr-1" /> 검색
+                                </button>
+                                <button onClick={() => fetchSavedAssets('video')} className={`px-4 py-2 text-sm font-bold border-b-2 transition ${currentTab === 'saved_video' ? 'border-emerald-500 text-white' : 'border-transparent text-text-sub hover:text-white'}`}>
+                                    <Icon name="video" size={14} className="inline mr-1" /> 영상 보관함
+                                </button>
+                                <button onClick={() => fetchSavedAssets('channel')} className={`px-4 py-2 text-sm font-bold border-b-2 transition ${currentTab === 'saved_channel' ? 'border-blue-500 text-white' : 'border-transparent text-text-sub hover:text-white'}`}>
+                                    <Icon name="users" size={14} className="inline mr-1" /> 채널 보관함
+                                </button>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2 items-center min-h-[40px]">
+                                {currentTab === 'search' && (
+                                    <>
+                                        <div className="bg-bg-card border border-gray-700 rounded-lg p-1 flex">
+                                            {['all', 'shorts', 'long'].map(t => (
+                                                <button key={t} onClick={() => setSearchFilters({ ...searchFilters, type: t })} className={`px-3 py-1.5 text-xs rounded transition ${searchFilters.type === t ? 'bg-primary text-white' : 'text-text-sub hover:text-white'}`}>{t === 'all' ? '전체' : t === 'shorts' ? '숏폼' : '롱폼'}</button>
+                                            ))}
+                                        </div>
+                                        <select className="bg-bg-card border border-gray-700 text-text-sub text-xs rounded-lg px-3 py-2 outline-none" value={searchFilters.date} onChange={(e) => setSearchFilters({ ...searchFilters, date: e.target.value })}>
+                                            <option value="all">📅 기간: 전체</option>
+                                            <option value="1d">1일</option>
+                                            <option value="3d">3일</option>
+                                            <option value="1m">1개월</option>
+                                            <option value="6m">6개월</option>
+                                        </select>
+                                        <select className="bg-bg-card border border-gray-700 text-text-sub text-xs rounded-lg px-3 py-2 outline-none" value={searchFilters.subscriber} onChange={(e) => setSearchFilters({ ...searchFilters, subscriber: e.target.value })}>
+                                            <option value="all">👥 구독자</option>
+                                            <option value="u5k">5천↓</option>
+                                            <option value="o10k">1만↑</option>
+                                            <option value="o50k">5만↑</option>
+                                            <option value="o100k">10만↑</option>
+                                            <option value="o1m">100만↑</option>
+                                        </select>
+                                        <select className="bg-bg-card border border-gray-700 text-text-sub text-xs rounded-lg px-3 py-2 outline-none" value={searchFilters.viewCount} onChange={(e) => setSearchFilters({ ...searchFilters, viewCount: e.target.value })}>
+                                            <option value="all">👁️ 조회수</option>
+                                            <option value="u10k">1만↓</option>
+                                            <option value="o10k">1만↑</option>
+                                            <option value="o100k">10만↑</option>
+                                            <option value="o500k">50만↑</option>
+                                            <option value="o1m">100만↑</option>
+                                        </select>
+                                        <div className="text-[10px] text-gray-500 flex items-center gap-1 ml-2">
+                                            <Icon name="zap" size={10} />
+                                            {searchText.trim() ? '검색: ~102' : '인기영상: ~3'} 쿼터
+                                        </div>
+                                    </>
+                                )}
+
+                                {currentTab === 'saved_video' && (
+                                    <>
+                                        <div className="flex items-center gap-2 bg-bg-card border border-gray-700 px-3 py-1.5 rounded-lg">
+                                            <span className="text-xs text-gray-400">📂</span>
+                                            <select className="bg-gray-800 text-white text-xs p-1 rounded border border-gray-600 outline-none" value={selectedVideoCategory} onChange={(e) => setSelectedVideoCategory(e.target.value)}>
+                                                <option value="전체">전체 보기</option>
+                                                {getExistingVideoCategories().map(cat => (<option key={cat} value={cat}>{cat}</option>))}
+                                            </select>
+                                        </div>
+                                        <div className="bg-bg-card border border-gray-700 rounded-lg p-1 flex">
+                                            {['all', 'shorts', 'long'].map(t => (
+                                                <button key={t} onClick={() => setVideoTypeFilter(t)} className={`px-3 py-1.5 text-xs rounded transition ${videoTypeFilter === t ? 'bg-primary text-white' : 'text-text-sub hover:text-white'}`}>{t === 'all' ? '전체' : t === 'shorts' ? '숏폼' : '롱폼'}</button>
+                                            ))}
+                                        </div>
+                                        <button onClick={() => setIsAddVideoOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1 shadow transition">
+                                            <Icon name="plus" size={12} /> 영상 추가
+                                        </button>
+                                        <div className="text-[10px] text-gray-500 flex items-center gap-1">
+                                            <Icon name="zap" size={10} /> ~2 쿼터/영상
+                                        </div>
+                                    </>
+                                )}
+
+                                {currentTab === 'saved_channel' && (
+                                    <>
+                                        {!isChannelAnalysisActive && (
+                                            <div className="flex items-center gap-2 bg-bg-card border border-gray-700 px-3 py-1.5 rounded-lg">
+                                                <span className="text-xs text-gray-400">📂</span>
+                                                <select className="bg-gray-800 text-white text-xs p-1 rounded border border-gray-600 outline-none" value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}>
+                                                    <option value="전체">전체 보기</option>
+                                                    {getExistingCategories().map(cat => (<option key={cat} value={cat}>{cat}</option>))}
+                                                </select>
+                                            </div>
+                                        )}
+                                        <select className="bg-bg-card border border-gray-700 text-text-sub text-xs rounded-lg px-3 py-2 outline-none" value={analysisFilters.date} onChange={(e) => setAnalysisFilters({ ...analysisFilters, date: e.target.value })}>
+                                            <option value="all">📅 기간: 전체</option>
+                                            <option value="1d">1일</option>
+                                            <option value="3d">3일</option>
+                                            <option value="1m">1개월</option>
+                                            <option value="6m">6개월</option>
+                                        </select>
+                                        <select className="bg-bg-card border border-gray-700 text-text-sub text-xs rounded-lg px-3 py-2 outline-none" value={analysisFilters.viewCount} onChange={(e) => setAnalysisFilters({ ...analysisFilters, viewCount: e.target.value })}>
+                                            <option value="all">👁️ 조회수</option>
+                                            <option value="u10k">1만↓</option>
+                                            <option value="o10k">1만↑</option>
+                                            <option value="o100k">10만↑</option>
+                                            <option value="o500k">50만↑</option>
+                                            <option value="o1m">100만↑</option>
+                                        </select>
+                                        {!isChannelAnalysisActive && (
+                                            <button onClick={() => setIsAddChannelOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1 shadow transition">
+                                                <Icon name="plus" size={12} /> 채널 추가
+                                            </button>
+                                        )}
+                                        <EstimatedQuota channelCount={targetChannelCount} isVisible={!isChannelAnalysisActive && targetChannelCount > 0} />
+                                        <button onClick={analyzeChannelVideos} className="bg-primary hover:bg-primary-hover text-white px-4 py-1.5 rounded text-xs font-bold flex items-center gap-1 shadow transition">
+                                            <Icon name="search" size={12} /> {isChannelAnalysisActive ? '다시 분석' : '분석 시작'}
+                                        </button>
+                                        {isChannelAnalysisActive && (
+                                            <button onClick={() => setIsChannelAnalysisActive(false)} className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-1.5 rounded text-xs font-bold flex items-center gap-1 shadow transition ml-auto">
+                                                <Icon name="arrow-left" size={12} /> 채널 목록
+                                            </button>
+                                        )}
+                                    </>
+                                )}
+
+                                {!(currentTab === 'saved_channel' && !isChannelAnalysisActive) && (
+                                    <div className="ml-auto bg-bg-card border border-gray-700 rounded-lg p-1 flex">
+                                        <button onClick={() => setViewMode('card')} className={`p-2 rounded ${viewMode === 'card' ? 'bg-gray-700 text-white' : 'text-gray-500'}`}><Icon name="layout-grid" size={16} /></button>
+                                        <button onClick={() => setViewMode('table')} className={`p-2 rounded ${viewMode === 'table' ? 'bg-gray-700 text-white' : 'text-gray-500'}`}><Icon name="list" size={16} /></button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {isLoading && currentList.length === 0 ? (
+                            <div className="py-20 flex flex-col items-center justify-center text-text-sub">
+                                <Icon name="loader-2" size={40} className="animate-spin mb-4 text-primary" />
+                                <p>데이터 로딩 중...</p>
+                            </div>
+                        ) : error ? (
+                            <div className="py-10 text-center border border-red-900 bg-red-900/10 rounded-xl text-red-400"><p>{error}</p></div>
+                        ) : currentList.length === 0 ? (
+                            <div className="py-20 text-center text-text-sub border-2 border-dashed border-gray-800 rounded-xl">
+                                <Icon name="search" size={48} className="mx-auto mb-4 opacity-30" />
+                                <p>{currentTab === 'search' ? '검색 결과가 없습니다.' : (currentTab === 'saved_channel' && isChannelAnalysisActive) ? '설정된 조건에 맞는 영상이 없습니다.' : '보관함이 비어있습니다.'}</p>
+                            </div>
+                        ) : currentTab === 'saved_channel' && !isChannelAnalysisActive ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                {currentList.map(c => (
+                                    <div key={c.dbId} className="bg-bg-card border border-gray-700 rounded-xl p-4 flex items-center gap-4 relative group hover:border-gray-500 transition">
+                                        <img src={c.thumbnail} className="w-14 h-14 rounded-full bg-gray-700 object-cover cursor-pointer" onClick={() => window.open(`https://www.youtube.com/channel/${c.channelId}`, '_blank')} />
+                                        <div className="flex-1 overflow-hidden">
+                                            <div className="flex items-center gap-2 mb-1"><span className="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded border border-gray-600">{c.category || '일반'}</span></div>
+                                            <h3 className="font-bold text-gray-200 truncate cursor-pointer hover:underline" onClick={() => window.open(`https://www.youtube.com/channel/${c.channelId}`, '_blank')}>{c.channelTitle}</h3>
+                                            <div className="text-xs text-text-sub mt-0.5">구독자 {formatNumber(c.subscriberCount)}</div>
+                                        </div>
+                                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                                            <button onClick={() => handleChangeCategory(c)} className="p-1.5 text-gray-500 hover:text-blue-400 bg-gray-800/80 rounded" title="카테고리 변경"><Icon name="folder" size={14} /></button>
+                                            <button onClick={() => handleDelete(c.dbId, 'channel_assets', c.channelId)} className="p-1.5 text-gray-500 hover:text-red-400 bg-gray-800/80 rounded" title="삭제"><Icon name="trash" size={14} /></button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : viewMode === 'card' ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                {currentList.map(v => (
+                                    <div key={v.dbId || v.id} className="bg-bg-card rounded-xl border border-gray-800 overflow-hidden hover:border-gray-600 transition group flex flex-col relative">
+                                        <div className="relative aspect-video bg-black cursor-pointer" onClick={() => window.open(`https://www.youtube.com/watch?v=${v.id}`, '_blank')}>
+                                            <img src={v.thumbnail} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition" />
+                                            <span className="absolute bottom-2 right-2 bg-black/80 text-white text-[10px] px-1.5 py-0.5 rounded font-mono">{v.formattedDuration}</span>
+                                        </div>
+                                        <div className="p-4 flex-1 flex flex-col">
+                                            <h3 className="text-sm font-bold text-gray-200 line-clamp-2 mb-2 leading-tight cursor-pointer hover:underline" onClick={() => window.open(`https://www.youtube.com/watch?v=${v.id}`, '_blank')}>{v.title}</h3>
+                                            <div className="flex items-center gap-2 mb-3">
+                                                {v.channelThumbnail && <img src={v.channelThumbnail} className="w-5 h-5 rounded-full bg-gray-700" />}
+                                                <span className="text-xs text-text-sub truncate">{v.channelTitle}</span>
+                                            </div>
+                                            <div className="mt-auto space-y-3">
+                                                <div className="flex justify-between items-center text-xs text-gray-400 bg-gray-900/50 p-2 rounded-lg">
+                                                    <span>조회 {formatNumber(v.viewCount)}</span>
+                                                    <div className="w-px h-3 bg-gray-700"></div>
+                                                    <span>구독 {formatNumber(v.subscriberCount)}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center text-[11px] text-text-muted px-1">
+                                                    <span className="flex items-center gap-1"><Icon name="calendar" size={12} /> {formatDate(v.publishedAt)}</span>
+                                                    <span className="flex items-center gap-1"><Icon name="thumbs-up" size={12} /> {formatNumber(v.likeCount)}</span>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-800">
+                                                    {(currentTab === 'search' || isChannelAnalysisActive) ? (
+                                                        <>
+                                                            <button onClick={() => handleSaveVideo(v)} disabled={savedVideoIds.has(v.id)} className={`flex items-center justify-center gap-1 py-1.5 text-xs rounded transition ${savedVideoIds.has(v.id) ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-gray-800 hover:bg-emerald-600 hover:text-white text-gray-400'}`}><Icon name="bookmark" size={12} /> {savedVideoIds.has(v.id) ? '저장됨' : '저장'}</button>
+                                                            <button onClick={() => handleSaveChannel(v)} disabled={savedChannelIds.has(v.channelId)} className={`flex items-center justify-center gap-1 py-1.5 text-xs rounded transition ${savedChannelIds.has(v.channelId) ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-gray-800 hover:bg-blue-600 hover:text-white text-gray-400'}`}><Icon name="user-plus" size={12} /> {savedChannelIds.has(v.channelId) ? '등록됨' : '채널'}</button>
+                                                        </>
+                                                    ) : currentTab === 'saved_video' ? (
+                                                        <div className="col-span-2 flex gap-2">
+                                                            <button onClick={() => handleChangeVideoCategory(v)} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs bg-gray-800 hover:bg-blue-600 text-gray-400 hover:text-white rounded transition"><Icon name="folder" size={12} /> {v.category || '일반'}</button>
+                                                            <button onClick={() => handleDelete(v.dbId, 'video_assets', v.id)} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs bg-red-900/20 hover:bg-red-600 text-red-400 hover:text-white rounded transition"><Icon name="trash" size={12} /> 삭제</button>
+                                                        </div>
+                                                    ) : (
+                                                        <button onClick={() => handleDelete(v.dbId, 'video_assets', v.id)} className="col-span-2 flex items-center justify-center gap-1 py-1.5 text-xs bg-red-900/20 hover:bg-red-600 text-red-400 hover:text-white rounded transition"><Icon name="trash" size={12} /> 삭제</button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="bg-bg-card rounded-xl border border-gray-800 overflow-hidden">
+                                <table className="w-full text-left text-sm text-gray-300">
+                                    <thead className="bg-gray-900 text-xs text-gray-500 uppercase">
+                                        <tr>
+                                            <th className="p-3">Video</th>
+                                            <th className="p-3">Channel</th>
+                                            <th className="p-3 text-center">Views</th>
+                                            <th className="p-3 text-center">Likes</th>
+                                            <th className="p-3 text-center">Date</th>
+                                            <th className="p-3 text-center">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-800">
+                                        {currentList.map(v => (
+                                            <tr key={v.dbId || v.id} className="hover:bg-gray-800/50">
+                                                <td className="p-3 flex gap-3 items-center">
+                                                    <div className="relative min-w-[100px] w-[100px] cursor-pointer" onClick={() => window.open(`https://www.youtube.com/watch?v=${v.id}`, '_blank')}>
+                                                        <img src={v.thumbnail} className="w-full aspect-video object-cover rounded" />
+                                                        <span className="absolute bottom-1 right-1 bg-black/80 text-[10px] px-1 rounded">{v.formattedDuration}</span>
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="font-bold text-sm line-clamp-2 cursor-pointer hover:underline" onClick={() => window.open(`https://www.youtube.com/watch?v=${v.id}`, '_blank')}>{v.title}</div>
+                                                    </div>
+                                                </td>
+                                                <td className="p-3">
+                                                    <div className="text-sm text-gray-300">{v.channelTitle}</div>
+                                                    <div className="text-xs text-gray-500">구독 {formatNumber(v.subscriberCount)}</div>
+                                                </td>
+                                                <td className="p-3 text-center text-sm text-gray-400">{formatNumber(v.viewCount)}</td>
+                                                <td className="p-3 text-center text-sm text-gray-400">{formatNumber(v.likeCount)}</td>
+                                                <td className="p-3 text-center text-xs text-gray-500">{formatDate(v.publishedAt)}</td>
+                                                <td className="p-3 text-center">
+                                                    {(currentTab === 'search' || isChannelAnalysisActive) ? (
+                                                        <div className="flex justify-center gap-2">
+                                                            <button onClick={() => handleSaveVideo(v)} disabled={savedVideoIds.has(v.id)} className={`p-1.5 rounded ${savedVideoIds.has(v.id) ? 'bg-gray-700 text-gray-500' : 'bg-gray-700 hover:bg-emerald-500 text-white'}`}><Icon name="bookmark" /></button>
+                                                            <button onClick={() => handleSaveChannel(v)} disabled={savedChannelIds.has(v.channelId)} className={`p-1.5 rounded ${savedChannelIds.has(v.channelId) ? 'bg-gray-700 text-gray-500' : 'bg-gray-700 hover:bg-blue-500 text-white'}`}><Icon name="user-plus" /></button>
+                                                        </div>
+                                                    ) : currentTab === 'saved_video' ? (
+                                                        <div className="flex justify-center gap-2">
+                                                            <button onClick={() => handleChangeVideoCategory(v)} className="p-1.5 rounded bg-gray-700 hover:bg-blue-500 text-white" title="카테고리 변경"><Icon name="folder" /></button>
+                                                            <button onClick={() => handleDelete(v.dbId, 'video_assets', v.id)} className="p-1.5 bg-red-900/30 text-red-400 hover:bg-red-500 hover:text-white rounded"><Icon name="trash" /></button>
+                                                        </div>
+                                                    ) : (
+                                                        <button onClick={() => handleDelete(v.dbId, 'video_assets', v.id)} className="p-1.5 bg-red-900/30 text-red-400 hover:bg-red-500 hover:text-white rounded"><Icon name="trash" /></button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    {currentTab === 'search' && !isLoading && nextPageToken && currentList.length > 0 && (
+                        <div className="flex justify-center py-6">
+                            <button onClick={() => performSearch(true)} className="bg-gray-800 hover:bg-gray-700 text-white px-6 py-3 rounded-full font-bold shadow-lg flex items-center gap-2 border border-gray-600 transition transform hover:scale-105"><Icon name="list" size={18} /> 더 보기</button>
+                        </div>
+                    )}
+
+                    {toast && <div className={`fixed bottom-8 right-4 px-4 py-3 rounded-lg shadow-xl text-white text-sm font-bold flex items-center gap-2 z-50 toast-enter ${toast.type === 'error' ? 'bg-red-600' : 'bg-emerald-600'}`}>{toast.type === 'error' ? <Icon name="x" /> : <Icon name="thumbs-up" />}{toast.msg}</div>}
+
+                    {/* 설정 모달 */}
+                    {isSettingsOpen && (
+                        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+                            <div className="bg-bg-card border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-2xl">
+                                <div className="flex items-center justify-between mb-6">
+                                    <h2 className="text-lg font-bold flex items-center gap-2"><Icon name="settings" size={20} className="text-primary" /> 설정</h2>
+                                    <button onClick={() => setIsSettingsOpen(false)} className="text-gray-500 hover:text-white"><Icon name="x" size={20} /></button>
+                                </div>
+                                <div className="space-y-4">
+                                    <div><label className="block text-sm font-medium text-gray-300 mb-2">YouTube API Key</label><input type="password" value={settings.youtubeApiKey} onChange={e => setSettings({ ...settings, youtubeApiKey: e.target.value })} className="w-full bg-bg-main border border-gray-700 rounded-lg p-3 text-white focus:border-primary focus:outline-none" placeholder="AIza..." /></div>
+                                    <div><label className="block text-sm font-medium text-gray-300 mb-2">Supabase URL</label><input type="text" value={settings.supabaseUrl} onChange={e => setSettings({ ...settings, supabaseUrl: e.target.value })} className="w-full bg-bg-main border border-gray-700 rounded-lg p-3 text-white focus:border-primary focus:outline-none" placeholder="https://xxx.supabase.co" /></div>
+                                    <div><label className="block text-sm font-medium text-gray-300 mb-2">Supabase Anon Key</label><input type="password" value={settings.supabaseKey} onChange={e => setSettings({ ...settings, supabaseKey: e.target.value })} className="w-full bg-bg-main border border-gray-700 rounded-lg p-3 text-white focus:border-primary focus:outline-none" placeholder="eyJ..." /></div>
+                                    <div className="border-t border-gray-700 pt-4 mt-4">
+                                        <label className="block text-sm font-medium text-gray-300 mb-3">API 사용량 관리</label>
+                                        <div className="bg-gray-800/50 rounded-lg p-4 space-y-3">
+                                            <div className="flex justify-between items-center"><span className="text-sm text-gray-400">오늘 사용량</span><span className="text-sm font-mono text-white">{quotaData.today.toLocaleString()} / {DAILY_QUOTA_LIMIT.toLocaleString()}</span></div>
+                                            <div className="h-2 bg-gray-700 rounded-full overflow-hidden"><div className={`h-full transition-all ${quotaData.today / DAILY_QUOTA_LIMIT < 0.5 ? 'bg-emerald-500' : quotaData.today / DAILY_QUOTA_LIMIT < 0.8 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${Math.min((quotaData.today / DAILY_QUOTA_LIMIT) * 100, 100)}%` }} /></div>
+                                            <div className="flex justify-between items-center text-xs text-gray-500"><span>누적: {quotaData.total.toLocaleString()}</span><span>{((quotaData.today / DAILY_QUOTA_LIMIT) * 100).toFixed(1)}%</span></div>
+                                            <button onClick={resetQuota} className="w-full mt-2 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded-lg flex items-center justify-center gap-2 transition"><Icon name="refresh-cw" size={12} /> 사용량 기록 초기화</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="mt-6 flex justify-end gap-2"><button onClick={() => setIsSettingsOpen(false)} className="px-4 py-2 text-sm text-gray-400 hover:text-white">취소</button><button onClick={() => handleSaveSettings(settings)} className="px-4 py-2 bg-primary hover:bg-primary-hover text-white text-sm rounded-lg font-bold">저장</button></div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 영상 추가 모달 */}
+                    {isAddVideoOpen && (
+                        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+                            <div className="bg-bg-card border border-gray-700 rounded-xl w-full max-w-lg p-6 shadow-2xl">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h2 className="text-lg font-bold flex items-center gap-2"><Icon name="video" size={20} className="text-emerald-500" /> 영상 직접 추가</h2>
+                                    <button onClick={() => setIsAddVideoOpen(false)} className="text-gray-500 hover:text-white"><Icon name="x" size={20} /></button>
+                                </div>
+                                <div className="space-y-4">
+                                    <div><label className="block text-sm text-gray-400 mb-2">영상 URL 또는 ID</label><input type="text" value={videoInput} onChange={(e) => setVideoInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleAddVideoByUrl(); }} className="w-full bg-bg-main border border-gray-700 rounded-lg p-3 text-white focus:border-primary focus:outline-none" placeholder="예: https://youtube.com/watch?v=xxxxx" /></div>
+                                    <div className="bg-gray-800/50 rounded-lg p-3 text-xs text-gray-400">
+                                        <p className="font-bold text-gray-300 mb-2">💡 입력 가능한 형식:</p>
+                                        <ul className="space-y-1 ml-2"><li>• https://youtube.com/watch?v=VIDEO_ID</li><li>• https://youtu.be/VIDEO_ID</li><li>• https://youtube.com/shorts/VIDEO_ID</li><li>• VIDEO_ID (11자리)</li></ul>
+                                        <p className="mt-2 text-yellow-500">⚡ 영상당 ~2 쿼터 소모</p>
+                                    </div>
+                                </div>
+                                <div className="mt-6 flex justify-end gap-2"><button onClick={() => setIsAddVideoOpen(false)} className="px-4 py-2 text-sm text-gray-400 hover:text-white">취소</button><button onClick={handleAddVideoByUrl} disabled={isAddingVideo} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm rounded-lg font-bold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">{isAddingVideo ? <><Icon name="loader-2" size={14} className="animate-spin" /> 조회 중...</> : <><Icon name="plus" size={14} /> 추가하기</>}</button></div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 채널 추가 모달 */}
+                    {isAddChannelOpen && (
+                        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+                            <div className="bg-bg-card border border-gray-700 rounded-xl w-full max-w-lg p-6 shadow-2xl">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h2 className="text-lg font-bold flex items-center gap-2"><Icon name="link" size={20} className="text-emerald-500" /> 채널 직접 추가</h2>
+                                    <button onClick={() => setIsAddChannelOpen(false)} className="text-gray-500 hover:text-white"><Icon name="x" size={20} /></button>
+                                </div>
+                                <div className="space-y-4">
+                                    <div><label className="block text-sm text-gray-400 mb-2">채널 URL 또는 핸들</label><input type="text" value={channelInput} onChange={(e) => setChannelInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleAddChannelByUrl(); }} className="w-full bg-bg-main border border-gray-700 rounded-lg p-3 text-white focus:border-primary focus:outline-none" placeholder="예: https://youtube.com/@채널명 또는 @채널명" /></div>
+                                    <div className="bg-gray-800/50 rounded-lg p-3 text-xs text-gray-400">
+                                        <p className="font-bold text-gray-300 mb-2">💡 입력 가능한 형식:</p>
+                                        <ul className="space-y-1 ml-2"><li>• https://youtube.com/@채널핸들 <span className="text-yellow-500">(~101 쿼터)</span></li><li>• https://youtube.com/channel/UC... <span className="text-emerald-500">(~1 쿼터)</span></li><li>• @채널핸들 <span className="text-yellow-500">(~101 쿼터)</span></li><li>• UC... (채널ID) <span className="text-emerald-500">(~1 쿼터)</span></li></ul>
+                                    </div>
+                                </div>
+                                <div className="mt-6 flex justify-end gap-2"><button onClick={() => setIsAddChannelOpen(false)} className="px-4 py-2 text-sm text-gray-400 hover:text-white">취소</button><button onClick={handleAddChannelByUrl} disabled={isAddingChannel} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm rounded-lg font-bold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">{isAddingChannel ? <><Icon name="loader-2" size={14} className="animate-spin" /> 조회 중...</> : <><Icon name="search" size={14} /> 채널 찾기</>}</button></div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 채널 카테고리 선택 모달 */}
+                    {isCategoryModalOpen && (
+                        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+                            <div className="bg-bg-card border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-2xl">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h2 className="text-lg font-bold flex items-center gap-2"><Icon name="folder" size={20} className="text-blue-500" /> {pendingChannelData?.isEdit ? '카테고리 변경' : '카테고리 선택'}</h2>
+                                    <button onClick={() => setIsCategoryModalOpen(false)} className="text-gray-500 hover:text-white"><Icon name="x" size={20} /></button>
+                                </div>
+                                {pendingChannelData && (
+                                    <div className="flex items-center gap-3 p-3 bg-gray-800/50 rounded-lg mb-4">
+                                        <img src={pendingChannelData.thumbnail} className="w-12 h-12 rounded-full bg-gray-700" />
+                                        <div><div className="font-bold text-white">{pendingChannelData.channelTitle}</div><div className="text-xs text-gray-400">구독자 {formatNumber(pendingChannelData.subscriberCount)}</div></div>
+                                    </div>
+                                )}
+                                <div className="space-y-4">
+                                    {getExistingCategories().length > 0 && !isCreatingNewCategory && (
+                                        <div><label className="block text-sm text-gray-400 mb-2">기존 카테고리에서 선택</label><div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">{getExistingCategories().map(cat => (<button key={cat} onClick={() => setSelectedCategoryForSave(cat)} className={`p-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${selectedCategoryForSave === cat ? 'bg-primary text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}>{selectedCategoryForSave === cat && <Icon name="check" size={14} />}<Icon name="folder" size={14} className="opacity-50" />{cat}</button>))}</div></div>
+                                    )}
+                                    {getExistingCategories().length > 0 && !isCreatingNewCategory && (<div className="flex items-center gap-3"><div className="flex-1 h-px bg-gray-700"></div><span className="text-xs text-gray-500">또는</span><div className="flex-1 h-px bg-gray-700"></div></div>)}
+                                    {!isCreatingNewCategory ? (
+                                        <button onClick={() => { setIsCreatingNewCategory(true); setSelectedCategoryForSave(''); }} className="w-full p-3 border-2 border-dashed border-gray-600 rounded-lg text-gray-400 hover:border-primary hover:text-primary transition flex items-center justify-center gap-2"><Icon name="folder-plus" size={16} /> 새 카테고리 만들기</button>
+                                    ) : (
+                                        <div><div className="flex items-center justify-between mb-2"><label className="text-sm text-gray-400">새 카테고리 이름</label>{getExistingCategories().length > 0 && (<button onClick={() => setIsCreatingNewCategory(false)} className="text-xs text-gray-500 hover:text-white">기존 카테고리 선택</button>)}</div><input type="text" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} className="w-full bg-bg-main border border-gray-700 rounded-lg p-3 text-white focus:border-primary focus:outline-none" placeholder="카테고리 이름 입력" autoFocus /></div>
+                                    )}
+                                </div>
+                                <div className="mt-6 flex justify-end gap-2"><button onClick={() => { setIsCategoryModalOpen(false); setPendingChannelData(null); }} className="px-4 py-2 text-sm text-gray-400 hover:text-white">취소</button><button onClick={confirmSaveChannel} disabled={!isCreatingNewCategory && !selectedCategoryForSave} className="px-4 py-2 bg-primary hover:bg-primary-hover text-white text-sm rounded-lg font-bold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"><Icon name="check" size={14} /> {pendingChannelData?.isEdit ? '변경하기' : '저장하기'}</button></div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 영상 카테고리 선택 모달 */}
+                    {isVideoCategoryModalOpen && (
+                        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+                            <div className="bg-bg-card border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-2xl">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h2 className="text-lg font-bold flex items-center gap-2"><Icon name="folder" size={20} className="text-emerald-500" /> {pendingVideoData?.isEdit ? '영상 카테고리 변경' : '영상 카테고리 선택'}</h2>
+                                    <button onClick={() => setIsVideoCategoryModalOpen(false)} className="text-gray-500 hover:text-white"><Icon name="x" size={20} /></button>
+                                </div>
+                                {pendingVideoData && (
+                                    <div className="flex items-center gap-3 p-3 bg-gray-800/50 rounded-lg mb-4">
+                                        <img src={pendingVideoData.thumbnail} className="w-20 h-12 rounded bg-gray-700 object-cover" />
+                                        <div className="flex-1 min-w-0"><div className="font-bold text-white text-sm line-clamp-2">{pendingVideoData.title}</div><div className="text-xs text-gray-400">{pendingVideoData.channelTitle}</div></div>
+                                    </div>
+                                )}
+                                <div className="space-y-4">
+                                    {getExistingVideoCategories().length > 0 && !isCreatingNewCategory && (
+                                        <div><label className="block text-sm text-gray-400 mb-2">기존 카테고리에서 선택</label><div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">{getExistingVideoCategories().map(cat => (<button key={cat} onClick={() => setSelectedCategoryForSave(cat)} className={`p-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${selectedCategoryForSave === cat ? 'bg-primary text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}>{selectedCategoryForSave === cat && <Icon name="check" size={14} />}<Icon name="folder" size={14} className="opacity-50" />{cat}</button>))}</div></div>
+                                    )}
+                                    {getExistingVideoCategories().length > 0 && !isCreatingNewCategory && (<div className="flex items-center gap-3"><div className="flex-1 h-px bg-gray-700"></div><span className="text-xs text-gray-500">또는</span><div className="flex-1 h-px bg-gray-700"></div></div>)}
+                                    {!isCreatingNewCategory ? (
+                                        <button onClick={() => { setIsCreatingNewCategory(true); setSelectedCategoryForSave(''); }} className="w-full p-3 border-2 border-dashed border-gray-600 rounded-lg text-gray-400 hover:border-primary hover:text-primary transition flex items-center justify-center gap-2"><Icon name="folder-plus" size={16} /> 새 카테고리 만들기</button>
+                                    ) : (
+                                        <div><div className="flex items-center justify-between mb-2"><label className="text-sm text-gray-400">새 카테고리 이름</label>{getExistingVideoCategories().length > 0 && (<button onClick={() => setIsCreatingNewCategory(false)} className="text-xs text-gray-500 hover:text-white">기존 카테고리 선택</button>)}</div><input type="text" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} className="w-full bg-bg-main border border-gray-700 rounded-lg p-3 text-white focus:border-primary focus:outline-none" placeholder="카테고리 이름 입력" autoFocus /></div>
+                                    )}
+                                </div>
+                                <div className="mt-6 flex justify-end gap-2"><button onClick={() => { setIsVideoCategoryModalOpen(false); setPendingVideoData(null); }} className="px-4 py-2 text-sm text-gray-400 hover:text-white">취소</button><button onClick={confirmSaveVideoWithCategory} disabled={!isCreatingNewCategory && !selectedCategoryForSave} className="px-4 py-2 bg-primary hover:bg-primary-hover text-white text-sm rounded-lg font-bold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"><Icon name="check" size={14} /> {pendingVideoData?.isEdit ? '변경하기' : '저장하기'}</button></div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
