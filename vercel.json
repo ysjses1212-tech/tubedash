@@ -1,13 +1,8 @@
 {
-  "functions": {
-    "api/transcript.py": {
-      "runtime": "python3.9"
-    }
-  },
-  "routes": [
+  "builds": [
     {
-      "src": "/api/transcript",
-      "dest": "/api/transcript.py"
+      "src": "api/transcript.py",
+      "use": "@vercel/python"
     }
   ]
 }
