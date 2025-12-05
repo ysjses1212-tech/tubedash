@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "api/transcript.py": {
+      "runtime": "python3.9"
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/transcript",
+      "dest": "/api/transcript.py"
+    }
+  ]
+}
