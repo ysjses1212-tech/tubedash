@@ -2,8 +2,8 @@
 const CONFIG = {
     // YouTube API 키 (여러 개 등록 가능)
     API_KEYS: [
-        'AIzaSy_AIzaSyCgbOY3gODsQCF0Ta5ie3v5tcLFlOIgzbE',
-        'AIzaSy_AIzaSyAfI1c6Lg5tAaZp82C8i5-hdFUwvIagFWk',
+        'AIzaSyCgbOY3gODsQCF0Ta5ie3v5tcLFlOIgzbE',
+        'AIzaSyAfI1c6Lg5tAaZp82C8i5-hdFUwvIagFWk',
         'AIzaSy_여기에_세번째키'
     ],
     // Supabase 설정
@@ -110,4 +110,5 @@ window.getDurationSeconds = getDurationSeconds;
 window.extractChannelId = extractChannelId;
 window.extractVideoId = extractVideoId;
 window.getKeyQuotas = getKeyQuotas;
+
 window.saveKeyQuotas = saveKeyQuotas;
