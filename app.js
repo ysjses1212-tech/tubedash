@@ -122,6 +122,12 @@ const App = () => {
     // 영상 카테고리 모달 상태
     const [isVideoCategoryModalOpen, setIsVideoCategoryModalOpen] = useState(false);
     const [pendingVideoData, setPendingVideoData] = useState(null);
+    // 키워드 추출 상태
+const [isKeywordModalOpen, setIsKeywordModalOpen] = useState(false);
+const [keywordTargetVideo, setKeywordTargetVideo] = useState(null);
+const [extractedKeywords, setExtractedKeywords] = useState([]);
+const [isExtractingKeywords, setIsExtractingKeywords] = useState(false);
+
 
     // 현재 API 키
     const currentApiKey = CONFIG.API_KEYS[currentKeyIndex] || settings.youtubeApiKey;
@@ -174,7 +180,148 @@ const App = () => {
             showToast('사용량 초기화 완료');
         }
     };
+// ===== 키워드 추출 기능 =====
 
+// 불용어 목록 (제거할 단어들)
+const STOPWORDS = [
+    // 조사
+    '은', '는', '이', '가', '을', '를', '의', '에', '에서', '으로', '로', '와', '과', '도', '만', '까지', '부터', '에게', '한테', '께',
+    // 어미
+    '다', '요', '죠', '네', '네요', '습니다', '입니다', '합니다', '됩니다', '있습니다', '없습니다', '했습니다', '됐습니다',
+    // 대명사
+    '저', '나', '너', '우리', '저희', '여러분', '이것', '그것', '저것', '이거', '그거', '저거',
+    // 부사
+    '정말', '진짜', '너무', '아주', '매우', '참', '꽤', '좀', '조금', '많이', '더', '덜', '가장', '제일',
+    // 접속사
+    '그리고', '그래서', '그런데', '하지만', '그러나', '또한', '또', '및',
+    // 기타
+    '것', '수', '등', '때', '중', '내', '위', '안', '밖', '앞', '뒤', '옆',
+    '오늘', '어제', '내일', '지금', '여기', '거기', '저기',
+    '하나', '둘', '셋', '첫', '두', '세',
+    // 유튜브 관련
+    '영상', '동영상', '구독', '좋아요', '알림', '설정', '채널', '링크', '댓글', '시청'
+];
+
+// 키워드 추출 함수
+const extractKeywordsFromText = (title, description) => {
+    // 제목과 설명 합치기
+    const fullText = `${title} ${title} ${title} ${description}`; // 제목 가중치 3배
+    
+    // 특수문자 제거, 소문자 변환
+    const cleanText = fullText
+        .replace(/[^\w\sㄱ-ㅎㅏ-ㅣ가-힣]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    
+    // 단어 분리
+    const words = cleanText.split(' ').filter(word => word.length >= 2);
+    
+    // 단어 빈도 계산
+    const wordCount = {};
+    words.forEach(word => {
+        const lowerWord = word.toLowerCase();
+        // 불용어 제외, 숫자만 있는 것 제외
+        if (!STOPWORDS.includes(lowerWord) && !/^\d+$/.test(word)) {
+            wordCount[word] = (wordCount[word] || 0) + 1;
+        }
+    });
+    
+    // 빈도순 정렬 후 상위 15개
+    const sortedKeywords = Object.entries(wordCount)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 15)
+        .map(([keyword, count]) => ({
+            keyword,
+            frequency: count,
+            type: 'unknown', // 나중에 Google Trends로 판별
+            trendType: 'unknown',
+            source: count >= 3 ? 'title' : 'description'
+        }));
+    
+    return sortedKeywords;
+};
+
+// 키워드 추출 버튼 클릭
+const handleExtractKeywords = (video) => {
+    setKeywordTargetVideo(video);
+    setExtractedKeywords([]);
+    setIsKeywordModalOpen(true);
+    
+    // 추출 시작
+    setIsExtractingKeywords(true);
+    
+    setTimeout(() => {
+        const keywords = extractKeywordsFromText(
+            video.title || '', 
+            video.description || ''
+        );
+        setExtractedKeywords(keywords);
+        setIsExtractingKeywords(false);
+    }, 500); // 약간의 딜레이로 로딩 효과
+};
+
+// 키워드 저장
+const saveKeywordsToSupabase = async () => {
+    if (!settings.supabaseUrl || extractedKeywords.length === 0) return;
+    
+    const client = createClient(settings.supabaseUrl, settings.supabaseKey);
+    
+    try {
+        for (const kw of extractedKeywords) {
+            // 1. 키워드 저장 (이미 있으면 무시)
+            const { data: existingKeyword } = await client
+                .from('keywords')
+                .select('id')
+                .eq('keyword', kw.keyword)
+                .single();
+            
+            let keywordId;
+            
+            if (existingKeyword) {
+                keywordId = existingKeyword.id;
+            } else {
+                const { data: newKeyword, error } = await client
+                    .from('keywords')
+                    .insert([{
+                        keyword: kw.keyword,
+                        keyword_type: kw.type,
+                        trend_type: kw.trendType
+                    }])
+                    .select('id')
+                    .single();
+                
+                if (error) throw error;
+                keywordId = newKeyword.id;
+            }
+            
+            // 2. 영상-키워드 연결 저장
+            await client
+                .from('video_keywords')
+                .upsert([{
+                    video_id: keywordTargetVideo.id,
+                    keyword_id: keywordId,
+                    frequency: kw.frequency,
+                    source: kw.source
+                }], { onConflict: 'video_id,keyword_id' });
+        }
+        
+        showToast(`${extractedKeywords.length}개 키워드 저장 완료!`);
+        setIsKeywordModalOpen(false);
+        
+    } catch (err) {
+        console.error('키워드 저장 실패:', err);
+        showToast('키워드 저장 실패: ' + err.message, 'error');
+    }
+};
+
+// 키워드 타입 수동 변경
+const updateKeywordType = (index, newType) => {
+    setExtractedKeywords(prev => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], type: newType };
+        return updated;
+    });
+};
     // 수동 키 전환
     const switchApiKey = (index) => {
         if (index >= 0 && index < CONFIG.API_KEYS.length) {
@@ -1056,37 +1203,53 @@ const App = () => {
                                         </div>
                                         <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-800">
                                             {(currentTab === 'search' || isChannelAnalysisActive) ? (
-                                                <>
-                                                    <button 
-                                                        onClick={() => handleSaveVideo(v)} 
-                                                        disabled={savedVideoIds.has(v.id)} 
-                                                        className={`flex items-center justify-center gap-1 py-1.5 text-xs rounded transition ${savedVideoIds.has(v.id) ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-gray-800 hover:bg-emerald-600 hover:text-white text-gray-400'}`}
-                                                    >
-                                                        <Icon name="bookmark" size={12} /> {savedVideoIds.has(v.id) ? '저장됨' : '저장'}
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => handleSaveChannel(v)} 
-                                                        disabled={savedChannelIds.has(v.channelId)} 
-                                                        className={`flex items-center justify-center gap-1 py-1.5 text-xs rounded transition ${savedChannelIds.has(v.channelId) ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-gray-800 hover:bg-blue-600 hover:text-white text-gray-400'}`}
-                                                    >
-                                                        <Icon name="user-plus" size={12} /> {savedChannelIds.has(v.channelId) ? '저장됨' : '채널'}
-                                                    </button>
-                                                </>
+    <>
+        <button 
+            onClick={() => handleSaveVideo(v)} 
+            disabled={savedVideoIds.has(v.id)} 
+            className={`flex items-center justify-center gap-1 py-1.5 text-xs rounded transition ${savedVideoIds.has(v.id) ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-gray-800 hover:bg-emerald-600 hover:text-white text-gray-400'}`}
+        >
+            <Icon name="bookmark" size={12} /> {savedVideoIds.has(v.id) ? '저장됨' : '저장'}
+        </button>
+        <button 
+            onClick={() => handleSaveChannel(v)} 
+            disabled={savedChannelIds.has(v.channelId)} 
+            className={`flex items-center justify-center gap-1 py-1.5 text-xs rounded transition ${savedChannelIds.has(v.channelId) ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-gray-800 hover:bg-blue-600 hover:text-white text-gray-400'}`}
+        >
+            <Icon name="user-plus" size={12} /> {savedChannelIds.has(v.channelId) ? '저장됨' : '채널'}
+        </button>
+        <button 
+            onClick={() => handleExtractKeywords(v)} 
+            className="col-span-2 flex items-center justify-center gap-1 py-1.5 text-xs bg-yellow-900/30 hover:bg-yellow-600 text-yellow-400 hover:text-white rounded transition mt-1"
+        >
+            <Icon name="zap" size={12} /> 키워드 추출
+        </button>
+    </>
+
                                             ) : currentTab === 'saved_video' ? (
-                                                <div className="col-span-2 flex gap-2">
-                                                    <button 
-                                                        onClick={() => handleChangeVideoCategory(v)} 
-                                                        className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs bg-gray-800 hover:bg-blue-600 text-gray-400 hover:text-white rounded transition"
-                                                    >
-                                                        <Icon name="folder" size={12} /> {v.category || '미분류'}
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => handleDelete(v.dbId, 'video_assets', v.id)} 
-                                                        className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs bg-red-900/20 hover:bg-red-600 text-red-400 hover:text-white rounded transition"
-                                                    >
-                                                        <Icon name="trash" size={12} /> 삭제
-                                                    </button>
-                                                </div>
+    <div className="col-span-2 space-y-2">
+        <div className="flex gap-2">
+            <button 
+                onClick={() => handleChangeVideoCategory(v)} 
+                className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs bg-gray-800 hover:bg-blue-600 text-gray-400 hover:text-white rounded transition"
+            >
+                <Icon name="folder" size={12} /> {v.category || '미분류'}
+            </button>
+            <button 
+                onClick={() => handleDelete(v.dbId, 'video_assets', v.id)} 
+                className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs bg-red-900/20 hover:bg-red-600 text-red-400 hover:text-white rounded transition"
+            >
+                <Icon name="trash" size={12} /> 삭제
+            </button>
+        </div>
+        <button 
+            onClick={() => handleExtractKeywords(v)} 
+            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs bg-yellow-900/30 hover:bg-yellow-600 text-yellow-400 hover:text-white rounded transition"
+        >
+            <Icon name="zap" size={12} /> 키워드 추출
+        </button>
+    </div>
+
                                             ) : (
                                                 <button 
                                                     onClick={() => handleDelete(v.dbId, 'video_assets', v.id)} 
@@ -1582,9 +1745,114 @@ const App = () => {
                     </div>
                 </div>
             )}
+            {/* 키워드 추출 모달 */}
+{isKeywordModalOpen && (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+        <div className="bg-bg-card border border-gray-700 rounded-xl w-full max-w-2xl p-6 shadow-2xl max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                    <Icon name="zap" size={20} className="text-yellow-500" /> 
+                    키워드 추출
+                </h2>
+                <button onClick={() => setIsKeywordModalOpen(false)} className="text-gray-500 hover:text-white">
+                    <Icon name="x" size={20} />
+                </button>
+            </div>
+            
+            {keywordTargetVideo && (
+                <div className="flex items-center gap-3 p-3 bg-gray-800/50 rounded-lg mb-4">
+                    <img src={keywordTargetVideo.thumbnail} className="w-24 h-14 rounded bg-gray-700 object-cover" />
+                    <div className="flex-1 min-w-0">
+                        <div className="font-bold text-white text-sm line-clamp-2">{keywordTargetVideo.title}</div>
+                        <div className="text-xs text-gray-400">{keywordTargetVideo.channelTitle}</div>
+                    </div>
+                </div>
+            )}
+            
+            {isExtractingKeywords ? (
+                <div className="py-10 text-center">
+                    <Icon name="loader-2" size={40} className="animate-spin mx-auto mb-4 text-primary" />
+                    <p className="text-gray-400">키워드 추출 중...</p>
+                </div>
+            ) : extractedKeywords.length > 0 ? (
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <p className="text-sm text-gray-400">
+                            총 <span className="text-white font-bold">{extractedKeywords.length}개</span> 키워드 추출됨
+                        </p>
+                        <div className="flex gap-2 text-xs">
+                            <span className="flex items-center gap-1 text-orange-400">
+                                <span className="w-2 h-2 bg-orange-400 rounded-full"></span> 숏테일 (이슈성)
+                            </span>
+                            <span className="flex items-center gap-1 text-emerald-400">
+                                <span className="w-2 h-2 bg-emerald-400 rounded-full"></span> 롱테일 (꾸준함)
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 gap-2">
+                        {extractedKeywords.map((kw, index) => (
+                            <div key={index} className="flex items-center justify-between p-3 bg-gray-800 rounded-lg">
+                                <div className="flex items-center gap-3">
+                                    <span className="text-lg font-mono text-gray-500 w-6">{index + 1}</span>
+                                    <div>
+                                        <span className="font-medium text-white">{kw.keyword}</span>
+                                        <span className="ml-2 text-xs text-gray-500">({kw.frequency}회)</span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className={`text-xs px-2 py-1 rounded ${
+                                        kw.source === 'title' ? 'bg-blue-900/50 text-blue-400' : 'bg-gray-700 text-gray-400'
+                                    }`}>
+                                        {kw.source === 'title' ? '제목' : '설명'}
+                                    </span>
+                                    <select
+                                        value={kw.type}
+                                        onChange={(e) => updateKeywordType(index, e.target.value)}
+                                        className="bg-gray-700 border border-gray-600 text-xs rounded px-2 py-1 outline-none"
+                                    >
+                                        <option value="unknown">분류 선택</option>
+                                        <option value="shorttail">🔥 숏테일</option>
+                                        <option value="longtail">🌱 롱테일</option>
+                                    </select>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    
+                    <div className="bg-yellow-900/20 border border-yellow-800 rounded-lg p-3 text-xs text-yellow-400">
+                        💡 <strong>팁:</strong> 숏테일은 최근 이슈/트렌드, 롱테일은 꾸준히 검색되는 키워드예요.
+                        <br />나중에 Google Trends 연동하면 자동 분류됩니다!
+                    </div>
+                </div>
+            ) : (
+                <div className="py-10 text-center text-gray-500">
+                    추출된 키워드가 없습니다.
+                </div>
+            )}
+            
+            <div className="mt-6 flex justify-end gap-2">
+                <button 
+                    onClick={() => setIsKeywordModalOpen(false)} 
+                    className="px-4 py-2 text-sm text-gray-400 hover:text-white"
+                >
+                    취소
+                </button>
+                <button 
+                    onClick={saveKeywordsToSupabase}
+                    disabled={extractedKeywords.length === 0 || isExtractingKeywords}
+                    className="px-4 py-2 bg-primary hover:bg-primary-hover text-white text-sm rounded-lg font-bold flex items-center gap-2 disabled:opacity-50"
+                >
+                    <Icon name="check" size={14} /> 키워드 저장
+                </button>
+            </div>
+        </div>
+    </div>
+)}    
         </div>
     );
 };
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
+
 root.render(<App />);
