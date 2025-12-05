@@ -4,7 +4,7 @@ const CONFIG = {
     API_KEYS: [
         'AIzaSyCgbOY3gODsQCF0Ta5ie3v5tcLFlOIgzbE',
         'AIzaSyAfI1c6Lg5tAaZp82C8i5-hdFUwvIagFWk',
-        'AIzaSy_여기에_세번째키'
+        
     ],
     // Supabase 설정
     SUPABASE_URL: 'https://rxuixdoqucgutqlxaqgr.supabase.co',
@@ -112,3 +112,4 @@ window.extractVideoId = extractVideoId;
 window.getKeyQuotas = getKeyQuotas;
 
 window.saveKeyQuotas = saveKeyQuotas;
+
