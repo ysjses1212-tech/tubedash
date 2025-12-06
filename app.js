@@ -452,7 +452,8 @@ if (manualScriptText && manualScriptText.trim()) {
     // 1차: 로컬 서버 시도 (무료, 무제한)
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+
         
         const localResponse = await fetch(`http://localhost:5000/api/transcript?video_id=${video.id}`, {
             signal: controller.signal
@@ -2438,6 +2439,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
