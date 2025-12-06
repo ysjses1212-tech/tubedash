@@ -243,139 +243,161 @@ const STOPWORDS = [
 ];
 
 
-// 키워드 추출 함수 (고급 버전)
+// 키워드 추출 함수 (터진 영상 분석용)
 const extractKeywordsFromText = (allText, transcriptText = '') => {
     const hasScript = transcriptText.length > 0;
     
-    // 특수문자 제거, 정리 (해시태그는 보존)
+    // 원본 텍스트에서 해시태그 먼저 추출
+    const hashtags = allText.match(/#[가-힣a-zA-Z0-9_]+/g) || [];
+    const cleanHashtags = hashtags.map(tag => tag.replace('#', '').toLowerCase());
+    
+    // 텍스트 정리
     let cleanText = allText
-        .replace(/#(\w+)/g, ' $1 ')  // 해시태그 내용 추출
+        .replace(/#[가-힣a-zA-Z0-9_]+/g, ' ')  // 해시태그 제거 (별도 처리)
         .replace(/[^\w\sㄱ-ㅎㅏ-ㅣ가-힣]/g, ' ')
         .replace(/\s+/g, ' ')
-        .trim()
-        .toLowerCase();
+        .trim();
     
     const words = cleanText.split(' ').filter(word => word.length >= 2);
     const keywordCandidates = {};
     
-    // 한국어 조사/어미 패턴
-    const suffixPattern = /(은|는|이|가|을|를|의|에|에서|로|으로|와|과|도|만|까지|부터|라고|라는|이라는|하는|되는|있는|없는|같은|한|할|함|된|됨|ing|tion|ment|ness|ly|er|est|ed|es|s)$/;
-    
-  // 의미없는 패턴 (동사/형용사/접속사/구어체 등)
-const invalidPatterns = [
-    /^\d+$/, // 숫자만
-    /^[ㄱ-ㅎㅏ-ㅣ]+$/, // 자음/모음만
-    /^.{1}$/, // 1글자
-    /^(ㅋ+|ㅎ+|ㅠ+|ㅜ+|ㅇ+|ㄷ+)$/, // 감탄사
-    
-    // 동사 어미 (과거/현재/미래)
-    /.+(했다|한다|하다|된다|됐다|되다|간다|갔다|온다|왔다|본다|봤다)$/,
-    /.+(먹다|먹는다|먹었다|마신다|마셨다|잔다|잤다|산다|샀다)$/,
-    /.+(있다|없다|같다|싶다|좋다|나쁘다|크다|작다|많다|적다)$/,
-    /.+(달다|달았다|붙다|붙었다|빠지다|빠졌다|들다|들었다)$/,
-    
-    // 형용사 어미
-    /.+(스럽다|답다|롭다|하다|적이다|스러운|다운|로운|적인)$/,
-    
-    // 접속사/부사
-    /^(근데|그런데|그래서|그러면|그러나|하지만|그리고|또한|즉|곧|왜냐하면)$/,
-    /^(아마|혹시|설마|과연|정말|진짜|완전|엄청|너무|매우|아주|참)$/,
-    /^(일단|우선|먼저|다음|나중|이제|지금|오늘|내일|어제|항상)$/,
-    
-    // 구어체/감탄사
-    /^(어|음|아|오|에|으음|흠|헐|와|우와|대박|쩐다)$/,
-    /.+(잖아|잖아요|거든|거든요|는데|는데요|네요|군요|구나)$/,
-    
-    // 대명사/지시어
-    /^(이거|그거|저거|여기|거기|저기|이것|그것|저것|뭐|누구|어디|언제)$/,
-    
-    // 의문사/조동사
-    /^(왜|어떻게|얼마나|무엇|어느|무슨)$/,
-];
-    
-    // 1단어 추출 (명사 위주)
-   words.forEach(word => {
-    // 불용어 체크
-    if (STOPWORDS.includes(word)) return;
-    
-    // 의미없는 패턴 체크 (원본 단어로)
-    if (invalidPatterns.some(p => p.test(word))) return;
-    
-    // 조사/어미 제거
-    let cleanWord = word.replace(suffixPattern, '');
-    
-    // 최소 2글자
-    if (cleanWord.length < 2) return;
-    
-    // 다시 불용어 체크
-    if (STOPWORDS.includes(cleanWord)) return;
-    
-    // 다시 패턴 체크 (정리된 단어로)
-    if (invalidPatterns.some(p => p.test(cleanWord))) return;
-    
-    // 검색어로 적합한지 체크 (명사 형태)
-    // 동사/형용사 어미로 끝나면 제외
-    if (/[다요음]$/.test(cleanWord) && cleanWord.length <= 3) return;
-    
-    keywordCandidates[cleanWord] = (keywordCandidates[cleanWord] || 0) + 1;
-});
-    
-    // 2단어 복합 키워드 추출 (의미있는 조합만)
-    for (let i = 0; i < words.length - 1; i++) {
-        let word1 = words[i].replace(suffixPattern, '');
-        let word2 = words[i + 1].replace(suffixPattern, '');
-        
-        // 각 단어가 2글자 이상이고 불용어가 아닌 경우만
-        if (word1.length >= 2 && word2.length >= 2 &&
-            !STOPWORDS.includes(word1) && !STOPWORDS.includes(word2) &&
-            !invalidPatterns.some(p => p.test(word1)) &&
-            !invalidPatterns.some(p => p.test(word2))) {
-            
-            const phrase = `${word1} ${word2}`;
-            keywordCandidates[phrase] = (keywordCandidates[phrase] || 0) + 1;
+    // 해시태그는 무조건 키워드로 (가중치 높게)
+    cleanHashtags.forEach(tag => {
+        if (tag.length >= 2) {
+            keywordCandidates[tag] = (keywordCandidates[tag] || 0) + 5;
         }
-    }
+    });
     
-    // 영상 태그가 있으면 가중치 부여 (video.tags 활용)
-    // 태그는 이미 allText에 포함되어 있으므로 별도 처리 불필요
+    // 키워드로 인정되는 패턴 (화이트리스트)
+    const validKeywordPatterns = [
+        // 명사형 어미
+        /^.{2,}(화|템|법|기|용|류|품|물|감|력|성|도|량|비|값|급|형|식|계|권|론|학|술|업|상|관|원|장|실|부|과|팀)$/,
+        
+        // 제품/서비스 관련
+        /^.{2,}(추천|리뷰|비교|순위|모음|정리|소개|방법|꿀팁|노하우)$/,
+        
+        // 수식어 + 명사
+        /^(best|top|최고|최신|인기|필수|가성비|입문|초보|고급|프로|베스트)$/i,
+        
+        // 영어 단어 (2글자 이상)
+        /^[a-zA-Z]{2,}$/,
+        
+        // 숫자 + 한글 조합 (2024년, 3가지 등)
+        /^[0-9]+[가-힣]+$/,
+        /^[가-힣]+[0-9]+$/,
+        
+        // 브랜드/고유명사 패턴 (대문자 시작 또는 전체 대문자)
+        /^[A-Z][a-zA-Z]+$/,
+        /^[A-Z]{2,}$/,
+    ];
+    
+    // 무조건 제외되는 패턴 (블랙리스트)
+    const invalidPatterns = [
+        /^\d+$/, // 숫자만
+        /^[ㄱ-ㅎㅏ-ㅣ]+$/, // 자음/모음만
+        /^.{1}$/, // 1글자
+        
+        // 동사/형용사 (어미로 판단)
+        /다$/, // ~다로 끝나는 동사/형용사
+        /(했|된|된|간|온|본|먹|잔|산|있|없|같|싶|좋|많|적)다$/,
+        /(하|되|가|오|보|먹|자|사|있|없)고$/,
+        /(하|되|가|오|보|먹|자|사)면$/,
+        /(하|되|가|오|보|먹|자|사)니까$/,
+        /(하|되|가|오|보|먹|자|사)서$/,
+        /는데$/, /거든$/, /잖아$/, /네요$/, /군요$/, /구나$/,
+        
+        // 접속사/부사/감탄사
+        /^(근데|그런데|그래서|그러면|그러나|하지만|그리고|또한|때문|이게|그게|저게)$/,
+        /^(아마|혹시|설마|과연|정말|진짜|완전|엄청|너무|매우|아주|참|꽤)$/,
+        /^(일단|우선|먼저|다음|나중|이제|지금|오늘|내일|어제|항상|자주|가끔)$/,
+        /^(그렇기|어떻게|왜냐하면|그러니까|아무튼|어쨌든|결국|역시)$/,
+        
+        // 대명사/지시어
+        /^(이거|그거|저거|여기|거기|저기|이것|그것|저것|뭐|누구|어디|언제|이런|그런|저런)$/,
+        
+        // 조사가 붙은 형태
+        /(은|는|이|가|을|를|의|에|로|와|과|도|만|요|죠)$/,
+    ];
+    
+    // 1단어 분석
+    words.forEach(word => {
+        const lowerWord = word.toLowerCase();
+        
+        // 블랙리스트 체크
+        if (invalidPatterns.some(p => p.test(lowerWord))) return;
+        if (STOPWORDS.includes(lowerWord)) return;
+        
+        // 3글자 이상만 (한글 기준)
+        if (/[가-힣]/.test(word) && word.length < 3) return;
+        
+        // 화이트리스트 체크 또는 기본 명사 조건
+        const isValidPattern = validKeywordPatterns.some(p => p.test(word));
+        const isLikelyNoun = /[가-힣]/.test(word) && !/[다고면서요죠]$/.test(word);
+        const isEnglish = /^[a-zA-Z]+$/.test(word) && word.length >= 2;
+        
+        if (isValidPattern || isLikelyNoun || isEnglish) {
+            keywordCandidates[lowerWord] = (keywordCandidates[lowerWord] || 0) + 1;
+        }
+    });
+    
+    // 2단어 복합 키워드 (더 가치 있음)
+    for (let i = 0; i < words.length - 1; i++) {
+        const word1 = words[i].toLowerCase();
+        const word2 = words[i + 1].toLowerCase();
+        
+        // 둘 다 유효해야 함
+        if (invalidPatterns.some(p => p.test(word1))) continue;
+        if (invalidPatterns.some(p => p.test(word2))) continue;
+        if (STOPWORDS.includes(word1) || STOPWORDS.includes(word2)) continue;
+        
+        // 최소 길이
+        if (word1.length < 2 || word2.length < 2) continue;
+        
+        const phrase = `${word1} ${word2}`;
+        keywordCandidates[phrase] = (keywordCandidates[phrase] || 0) + 2; // 복합어 가중치
+    }
     
     // 스크립트 단어 체크 (source 구분용)
     const scriptWords = new Set();
     if (hasScript) {
-        const cleanScript = transcriptText
-            .replace(/[^\w\sㄱ-ㅎㅏ-ㅣ가-힣]/g, ' ')
-            .toLowerCase();
-        cleanScript.split(' ').forEach(word => {
-            const clean = word.replace(suffixPattern, '');
-            if (clean.length >= 2) scriptWords.add(clean);
+        transcriptText.toLowerCase().split(/\s+/).forEach(word => {
+            if (word.length >= 2) scriptWords.add(word);
         });
     }
     
-    // 품질 점수 계산 및 정렬
+    // 점수 계산 및 정렬
     const scoredKeywords = Object.entries(keywordCandidates)
+        .filter(([keyword, count]) => {
+            // 최종 필터: 최소 빈도 또는 해시태그
+            return count >= 1;
+        })
         .map(([keyword, count]) => {
             let score = count;
             
-            // 복합 키워드 보너스 (2단어)
-            if (keyword.includes(' ')) score *= 1.5;
+            // 해시태그 보너스
+            if (cleanHashtags.includes(keyword)) score += 10;
             
-            // 긴 키워드 보너스 (검색 의도가 명확)
-            if (keyword.length >= 4) score *= 1.2;
+            // 복합 키워드 보너스
+            if (keyword.includes(' ')) score *= 2;
             
-            // 한글 키워드 보너스
-            if (/[가-힣]/.test(keyword)) score *= 1.1;
+            // 영어+한글 혼합 보너스
+            if (/[a-zA-Z]/.test(keyword) && /[가-힣]/.test(keyword)) score *= 1.5;
+            
+            // 화이트리스트 패턴 보너스
+            if (validKeywordPatterns.some(p => p.test(keyword))) score *= 1.5;
             
             return { keyword, count, score };
         })
         .sort((a, b) => b.score - a.score)
         .slice(0, 15);
     
-    // 최종 결과 생성
-    const result = scoredKeywords.map(({ keyword, count }) => {
+    // 결과 생성
+    return scoredKeywords.map(({ keyword, count }) => {
         let source = 'description';
-        const keywordParts = keyword.split(' ');
         
-        if (keywordParts.some(w => scriptWords.has(w))) {
+        if (cleanHashtags.includes(keyword)) {
+            source = 'title';
+        } else if (keyword.split(' ').some(w => scriptWords.has(w))) {
             source = 'script';
         } else if (count >= 3) {
             source = 'title';
@@ -389,9 +411,8 @@ const invalidPatterns = [
             source
         };
     });
-    
-    return result;
 };
+
 
 
 // SerpAPI 사용량 저장
@@ -2230,6 +2251,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
