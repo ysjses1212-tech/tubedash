@@ -513,14 +513,33 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
                         
                         // 조회수 가져오기
                         const statsResponse = await fetch(
-                            `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&id=${videoIds}&key=${CONFIG.API_KEYS[currentKeyIndex]}`
-                        );
+    `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${videoIds}&key=${CONFIG.API_KEYS[currentKeyIndex]}`
+);
+
                         const statsData = await statsResponse.json();
                         
-                        // 100만 이상 필터
-                        const hitVideos = statsData.items?.filter(
-                            v => parseInt(v.statistics?.viewCount || 0) >= 1000000
-                        ) || [];
+                        // 숏폼(60초 이하) 100만+ / 롱폼(60초 초과) 50만+ 필터
+const hitVideos = statsData.items?.filter(v => {
+    const viewCount = parseInt(v.statistics?.viewCount || 0);
+    const duration = v.contentDetails?.duration || '';
+    
+    // ISO 8601 duration 파싱 (PT1M30S = 90초)
+    const durationMatch = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+    let totalSeconds = 0;
+    if (durationMatch) {
+        const hours = parseInt(durationMatch[1] || 0);
+        const minutes = parseInt(durationMatch[2] || 0);
+        const seconds = parseInt(durationMatch[3] || 0);
+        totalSeconds = hours * 3600 + minutes * 60 + seconds;
+    }
+    
+    // 숏폼: 60초 이하 → 100만+, 롱폼: 60초 초과 → 50만+
+    const isShort = totalSeconds <= 60;
+    const threshold = isShort ? 1000000 : 500000;
+    
+    return viewCount >= threshold;
+}) || [];
+
                         
                         kw.hitVideos = hitVideos.length;
                         kw.totalSearched = searchData.items.length;
@@ -2392,6 +2411,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
