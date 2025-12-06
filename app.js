@@ -2210,7 +2210,26 @@ const updateKeywordType = (index, newType) => {
                                             </span>
                                         </div>
                                     )}
-                                    
+                                    {/* 연관 키워드 */}
+{kw.relatedKeywords && kw.relatedKeywords.length > 0 && (
+    <div className="mb-3">
+        <div className="text-xs text-gray-500 mb-1">연관 키워드:</div>
+        <div className="flex flex-wrap gap-1">
+            {kw.relatedKeywords.map((related, rIdx) => (
+                <a
+                    key={rIdx}
+                    href={`https://www.youtube.com/results?search_query=${encodeURIComponent(related)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs bg-gray-700 hover:bg-primary text-gray-300 hover:text-white px-2 py-1 rounded transition cursor-pointer"
+                >
+                    {related}
+                </a>
+            ))}
+        </div>
+    </div>
+)}
+
                                     {/* 터진 영상 보기 버튼 */}
                                     {kw.hitVideoList && kw.hitVideoList.length > 0 && (
                                         <button
@@ -2293,6 +2312,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
