@@ -492,7 +492,8 @@ if (manualScriptText && manualScriptText.trim()) {
             length: transcriptText.length,
             isManual
         });
-        
+        console.log('📤 Gemini 요청:', { title: video.title, transcript: transcriptText.slice(0, 100) });
+
         // Gemini로 키워드 추출
         const keywordResponse = await fetch(CONFIG.KEYWORD_API, {
             method: 'POST',
@@ -506,7 +507,8 @@ if (manualScriptText && manualScriptText.trim()) {
         });
         
         const keywordResult = await keywordResponse.json();
-        
+        console.log('📥 Gemini 응답:', keywordResult);
+
         if (!keywordResult.success || !keywordResult.keywords) {
             throw new Error('키워드 추출 실패');
         }
@@ -2439,6 +2441,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
