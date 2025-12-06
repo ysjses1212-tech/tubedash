@@ -442,21 +442,38 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
         let transcriptText = '';
         let isManual = false;
         
-        // 스크립트 가져오기
-        if (manualScriptText && manualScriptText.trim()) {
-            transcriptText = manualScriptText.trim();
-            isManual = true;
-        } else {
-            try {
-                const response = await fetch(`${CONFIG.TRANSCRIPT_API}?video_id=${video.id}`);
-                const data = await response.json();
-                if (data.success && data.transcript) {
-                    transcriptText = data.transcript;
-                }
-            } catch (e) {
-                console.log('스크립트 가져오기 실패:', e);
-            }
+        // 스크립트 가져오기 (하이브리드: 로컬 우선 → Supadata 백업)
+if (manualScriptText && manualScriptText.trim()) {
+    transcriptText = manualScriptText.trim();
+    isManual = true;
+} else {
+    // 1차: 로컬 서버 시도 (무료, 무제한)
+    try {
+        const localResponse = await fetch(`http://localhost:5000/api/transcript?video_id=${video.id}`, {
+            signal: AbortSignal.timeout(5000) // 5초 타임아웃
+        });
+        const localData = await localResponse.json();
+        if (localData.success && localData.transcript) {
+            transcriptText = localData.transcript;
+            console.log('✅ 로컬 서버에서 자막 가져옴');
         }
+    } catch (e) {
+        console.log('로컬 서버 연결 안됨, Supadata로 시도...');
+        
+        // 2차: Supadata API (월 100회 제한)
+        try {
+            const response = await fetch(`${CONFIG.TRANSCRIPT_API}?video_id=${video.id}`);
+            const data = await response.json();
+            if (data.success && data.transcript) {
+                transcriptText = data.transcript;
+                console.log('✅ Supadata에서 자막 가져옴');
+            }
+        } catch (e2) {
+            console.log('스크립트 가져오기 실패:', e2);
+        }
+    }
+}
+
         
         // 스크립트 정보 저장
         setKeywordTranscriptInfo({
@@ -2411,6 +2428,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
