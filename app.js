@@ -241,18 +241,7 @@ const [isExtractingKeywords, setIsExtractingKeywords] = useState(false);
             totalViews: null // 총 조회수
         }));
     
-    // 키워드가 0~1개면 콘텐츠형 영상
-    const videoType = topKeywords.length <= 1 ? 'content' : 'keyword';
     
-    return {
-        keywords: topKeywords,
-        videoType,
-        message: videoType === 'content' 
-            ? '키워드보다 콘텐츠/썸네일이 중요한 영상입니다' 
-            : null
-    };
-};
-
 
 // SerpAPI 사용량 저장
 useEffect(() => {
@@ -2365,6 +2354,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
