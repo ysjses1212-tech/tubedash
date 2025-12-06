@@ -191,58 +191,7 @@ const [isExtractingKeywords, setIsExtractingKeywords] = useState(false);
             showToast('사용량 초기화 완료');
         }
     };
-    
-    // 1. 제목에서 명사 추출 (가중치 3배)
-    const titleNouns = extractNouns(title, true);
-    
-    // 2. 태그에서 명사 추출 (가중치 2배)
-    const tagNouns = tags
-        .filter(tag => !stopwords.includes(tag.toLowerCase()))
-        .filter(tag => tag.length >= 2)
-        .map(tag => ({ word: tag.toLowerCase(), source: 'tag', weight: 2 }));
-    
-    // 3. 해시태그 (가중치 2배)
-    const hashtagNouns = hashtags
-        .filter(tag => !stopwords.includes(tag))
-        .filter(tag => tag.length >= 2)
-        .map(tag => ({ word: tag, source: 'hashtag', weight: 2 }));
-    
-    // 4. 스크립트에서 명사 추출 (제목 키워드가 부족할 때만)
-    let scriptNouns = [];
-    if (titleNouns.length < 2 && transcriptText) {
-        // 한글만 추출 (외국어 스크립트 제외)
-        const koreanOnly = transcriptText.replace(/[^\sㄱ-ㅎㅏ-ㅣ가-힣]/g, ' ');
-        scriptNouns = extractNouns(koreanOnly, false);
-    }
-    
-    // 모든 명사 합치기
-    const allNouns = [...titleNouns, ...tagNouns, ...hashtagNouns, ...scriptNouns];
-    
-    // 단어별 점수 계산
-    const wordScores = {};
-    allNouns.forEach(({ word, source, weight }) => {
-        if (!wordScores[word]) {
-            wordScores[word] = { word, score: 0, sources: new Set() };
-        }
-        wordScores[word].score += weight;
-        wordScores[word].sources.add(source);
-    });
-    
-    // 점수순 정렬 후 상위 5개
-    const topKeywords = Object.values(wordScores)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 5)
-        .map(({ word, score, sources }) => ({
-            keyword: word,
-            score,
-            sources: Array.from(sources),
-            type: 'keyword', // 나중에 터진 영상 수로 업데이트
-            hitVideos: null, // 터진 영상 수
-            totalViews: null // 총 조회수
-        }));
-    
-    
-
+     
 // SerpAPI 사용량 저장
 useEffect(() => {
     localStorage.setItem('serpApiUsage', serpApiUsage.toString());
@@ -2344,6 +2293,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
