@@ -447,26 +447,36 @@ if (manualScriptText && manualScriptText.trim()) {
     transcriptText = manualScriptText.trim();
     isManual = true;
 } else {
+    let localSuccess = false;
+    
     // 1차: 로컬 서버 시도 (무료, 무제한)
     try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
         const localResponse = await fetch(`http://localhost:5000/api/transcript?video_id=${video.id}`, {
-            signal: AbortSignal.timeout(5000) // 5초 타임아웃
+            signal: controller.signal
         });
+        clearTimeout(timeoutId);
+        
         const localData = await localResponse.json();
         if (localData.success && localData.transcript) {
             transcriptText = localData.transcript;
-            console.log('✅ 로컬 서버에서 자막 가져옴');
+            localSuccess = true;
+            console.log('✅ 로컬 서버에서 자막 가져옴 (무료)');
         }
     } catch (e) {
-        console.log('로컬 서버 연결 안됨, Supadata로 시도...');
-        
-        // 2차: Supadata API (월 100회 제한)
+        console.log('로컬 서버 연결 안됨:', e.message);
+    }
+    
+    // 2차: 로컬 실패시 Supadata API (월 100회 제한)
+    if (!localSuccess) {
         try {
             const response = await fetch(`${CONFIG.TRANSCRIPT_API}?video_id=${video.id}`);
             const data = await response.json();
             if (data.success && data.transcript) {
                 transcriptText = data.transcript;
-                console.log('✅ Supadata에서 자막 가져옴');
+                console.log('✅ Supadata에서 자막 가져옴 (API 사용)');
             }
         } catch (e2) {
             console.log('스크립트 가져오기 실패:', e2);
@@ -2428,6 +2438,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
