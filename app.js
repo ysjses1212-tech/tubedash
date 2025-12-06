@@ -74,6 +74,7 @@ const App = () => {
     const [currentKeyIndex, setCurrentKeyIndex] = useState(() => getKeyQuotas().currentIndex || 0);
     
     // 기본 상태
+    const [expandedKeyword, setExpandedKeyword] = useState(null);
     const [videoType, setVideoType] = useState(null); // 'keyword' or 'content'
     const [videoTypeMessage, setVideoTypeMessage] = useState(null);
     const [viewMode, setViewMode] = useState('card');
@@ -229,7 +230,16 @@ const STOPWORDS = [
     '항상', '자주', '가끔', '언제나', '늘', '계속', '다시', '또한', '역시', '아마', '혹시',
     '것들', '것도', '거야', '거예요', '거죠', '건데', '거든', '거라', '게요', '네요', '데요',
     '있잖아', '있잖아요', '있는데', '있는데요', '없는데', '없는데요', '같은데', '같은데요',
-    
+
+    // 추가할 불용어
+    '유일하게', '안먹', '않는', '없는', '있는', '하는', '되는', '같은',
+    '이런', '저런', '그런', '어떤', '무슨', '어느',
+    '하게', '되게', '같게', '없게', '있게',
+    '만든', '만들', '가진', '갖고', '통해', '위해', '대해', '따라',
+    '모든', '각각', '서로', '함께', '혼자', '직접', '특히', '주로',
+    '아직', '벌써', '이미', '거의', '약간', '조금', '많이', '적게',
+    '그냥', '바로', '정말', '진짜', '완전', '엄청', '너무', '매우',
+
     // 숫자/순위 관련
     '1위', '2위', '3위', '4위', '5위', '6위', '7위', '8위', '9위', '10위',
     '1등', '2등', '3등', '4등', '5등', '1번', '2번', '3번', '4번', '5번',
@@ -455,42 +465,59 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
             isManual
         });
         
-        // 키워드 추출 (새로운 로직)
+        // 키워드 추출
         const result = extractKeywordsFromText(video, transcriptText);
         
-        // 키워드형 영상이면 터진 영상 검색
+        // 키워드형 영상이면 YouTube 검색
         if (result.videoType === 'keyword' && result.keywords.length > 0) {
-            // 각 키워드별로 YouTube 검색 (병렬 처리)
             const searchPromises = result.keywords.map(async (kw) => {
                 try {
+                    // 1. 일반 검색 (상위 50개)
                     const searchResponse = await fetch(
                         `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(kw.keyword)}&type=video&maxResults=50&key=${CONFIG.API_KEYS[currentKeyIndex]}`
                     );
                     const searchData = await searchResponse.json();
                     
                     if (searchData.items && searchData.items.length > 0) {
-                        // 비디오 ID 목록
                         const videoIds = searchData.items.map(item => item.id.videoId).join(',');
                         
                         // 조회수 가져오기
                         const statsResponse = await fetch(
-                            `https://www.googleapis.com/youtube/v3/videos?part=statistics&id=${videoIds}&key=${CONFIG.API_KEYS[currentKeyIndex]}`
+                            `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics&id=${videoIds}&key=${CONFIG.API_KEYS[currentKeyIndex]}`
                         );
                         const statsData = await statsResponse.json();
                         
-                        // 100만 이상 조회수 필터
+                        // 100만 이상 필터
                         const hitVideos = statsData.items?.filter(
                             v => parseInt(v.statistics?.viewCount || 0) >= 1000000
                         ) || [];
                         
-                        const totalViews = hitVideos.reduce(
-                            (sum, v) => sum + parseInt(v.statistics?.viewCount || 0), 0
-                        );
-                        
                         kw.hitVideos = hitVideos.length;
-                        kw.totalViews = totalViews;
-                        kw.type = hitVideos.length >= 3 ? 'hot' : hitVideos.length >= 1 ? 'potential' : 'weak';
+                        kw.totalSearched = searchData.items.length;
+                        kw.hitRate = Math.round((hitVideos.length / searchData.items.length) * 100);
+                        kw.type = kw.hitRate >= 50 ? 'hot' : kw.hitRate >= 20 ? 'potential' : 'weak';
+                        
+                        // 터진 영상 목록 저장 (상위 10개)
+                        kw.hitVideoList = hitVideos.slice(0, 10).map(v => ({
+                            id: v.id,
+                            title: v.snippet?.title || '',
+                            thumbnail: v.snippet?.thumbnails?.default?.url || '',
+                            viewCount: parseInt(v.statistics?.viewCount || 0),
+                            channelTitle: v.snippet?.channelTitle || ''
+                        }));
                     }
+                    
+                    // 2. 해시태그 검색
+                    try {
+                        const hashtagResponse = await fetch(
+                            `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent('#' + kw.keyword)}&type=video&maxResults=1&key=${CONFIG.API_KEYS[currentKeyIndex]}`
+                        );
+                        const hashtagData = await hashtagResponse.json();
+                        kw.hashtagCount = hashtagData.pageInfo?.totalResults || 0;
+                    } catch (e) {
+                        kw.hashtagCount = null;
+                    }
+                    
                 } catch (error) {
                     console.error(`키워드 검색 실패 (${kw.keyword}):`, error);
                 }
@@ -2042,6 +2069,7 @@ const updateKeywordType = (index, newType) => {
                 setKeywordTranscriptInfo(null);
                 setVideoType(null);
                 setVideoTypeMessage(null);
+                setExpandedKeyword(null);
             }
         }}
     >
@@ -2059,6 +2087,7 @@ const updateKeywordType = (index, newType) => {
                     setKeywordTranscriptInfo(null);
                     setVideoType(null);
                     setVideoTypeMessage(null);
+                    setExpandedKeyword(null);
                 }} className="text-gray-500 hover:text-white">
                     <Icon name="x" size={20} />
                 </button>
@@ -2130,7 +2159,7 @@ const updateKeywordType = (index, newType) => {
                 <div className="py-10 text-center">
                     <Icon name="loader-2" size={40} className="animate-spin mx-auto mb-4 text-primary" />
                     <p className="text-gray-400">키워드 추출 중...</p>
-                    <p className="text-xs text-gray-500 mt-2">터진 영상 검색 중...</p>
+                    <p className="text-xs text-gray-500 mt-2">YouTube에서 터진 영상 검색 중...</p>
                 </div>
             )}
             
@@ -2181,12 +2210,12 @@ const updateKeywordType = (index, newType) => {
                             <p className="text-sm text-gray-400">
                                 추출된 키워드 <span className="text-white font-bold">{extractedKeywords.length}개</span>
                             </p>
-                            <div className="flex gap-2 text-xs">
+                            <div className="flex gap-3 text-xs">
                                 <span className="flex items-center gap-1 text-red-400">
-                                    <span className="w-2 h-2 bg-red-400 rounded-full"></span> HOT (3개+)
+                                    <span className="w-2 h-2 bg-red-400 rounded-full"></span> HOT (50%+)
                                 </span>
                                 <span className="flex items-center gap-1 text-yellow-400">
-                                    <span className="w-2 h-2 bg-yellow-400 rounded-full"></span> 가능성 (1-2개)
+                                    <span className="w-2 h-2 bg-yellow-400 rounded-full"></span> 가능성 (20%+)
                                 </span>
                             </div>
                         </div>
@@ -2194,7 +2223,7 @@ const updateKeywordType = (index, newType) => {
                         {extractedKeywords.map((kw, index) => (
                             <div 
                                 key={index} 
-                                className={`p-4 rounded-lg border ${
+                                className={`rounded-lg border overflow-hidden ${
                                     kw.type === 'hot' 
                                         ? 'bg-red-900/20 border-red-700' 
                                         : kw.type === 'potential'
@@ -2202,59 +2231,94 @@ const updateKeywordType = (index, newType) => {
                                             : 'bg-gray-800 border-gray-700'
                                 }`}
                             >
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-lg font-bold text-white">{kw.keyword}</span>
-                                        {kw.type === 'hot' && <span className="text-red-400 text-xs">🔥 HOT</span>}
-                                        {kw.type === 'potential' && <span className="text-yellow-400 text-xs">⚡ 가능성</span>}
-                                    </div>
-                                    <div className="flex gap-1">
-                                        {kw.sources.map((src, i) => (
-                                            <span key={i} className={`text-xs px-2 py-0.5 rounded ${
-                                                src === 'title' ? 'bg-blue-900/50 text-blue-400' :
-                                                src === 'tag' ? 'bg-purple-900/50 text-purple-400' :
-                                                src === 'hashtag' ? 'bg-pink-900/50 text-pink-400' :
-                                                'bg-gray-700 text-gray-400'
-                                            }`}>
-                                                {src === 'title' ? '제목' : 
-                                                 src === 'tag' ? '태그' : 
-                                                 src === 'hashtag' ? '해시태그' : '스크립트'}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </div>
-                                
-                                {kw.hitVideos !== null && (
-                                    <div className="flex items-center gap-4 text-sm">
-                                        <div className="flex items-center gap-1">
-                                            <Icon name="video" size={14} className="text-gray-500" />
-                                            <span className="text-gray-400">100만+ 영상:</span>
-                                            <span className={`font-bold ${
-                                                kw.hitVideos >= 3 ? 'text-red-400' :
-                                                kw.hitVideos >= 1 ? 'text-yellow-400' :
-                                                'text-gray-500'
-                                            }`}>
-                                                {kw.hitVideos}개
-                                            </span>
+                                {/* 키워드 헤더 */}
+                                <div className="p-4">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-lg font-bold text-white">{kw.keyword}</span>
+                                            {kw.type === 'hot' && <span className="text-red-400 text-xs">🔥 HOT</span>}
+                                            {kw.type === 'potential' && <span className="text-yellow-400 text-xs">⚡ 가능성</span>}
                                         </div>
-                                        {kw.totalViews > 0 && (
+                                        <div className="flex gap-1">
+                                            {kw.sources.map((src, i) => (
+                                                <span key={i} className={`text-xs px-2 py-0.5 rounded ${
+                                                    src === 'title' ? 'bg-blue-900/50 text-blue-400' :
+                                                    src === 'tag' ? 'bg-purple-900/50 text-purple-400' :
+                                                    src === 'hashtag' ? 'bg-pink-900/50 text-pink-400' :
+                                                    'bg-gray-700 text-gray-400'
+                                                }`}>
+                                                    {src === 'title' ? '제목' : 
+                                                     src === 'tag' ? '태그' : 
+                                                     src === 'hashtag' ? '해시태그' : '스크립트'}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    
+                                    {/* 통계 */}
+                                    <div className="flex items-center gap-4 text-sm mb-3">
+                                        {kw.hitVideos !== null && kw.hitVideos !== undefined && (
                                             <div className="flex items-center gap-1">
-                                                <Icon name="eye" size={14} className="text-gray-500" />
-                                                <span className="text-gray-400">총 조회수:</span>
-                                                <span className="font-bold text-white">
-                                                    {(kw.totalViews / 10000).toFixed(0)}만
+                                                <Icon name="trending-up" size={14} className="text-gray-500" />
+                                                <span className="text-gray-400">100만+ 영상:</span>
+                                                <span className={`font-bold ${
+                                                    kw.hitRate >= 50 ? 'text-red-400' :
+                                                    kw.hitRate >= 20 ? 'text-yellow-400' :
+                                                    'text-gray-500'
+                                                }`}>
+                                                    {kw.totalSearched}개 중 {kw.hitVideos}개 ({kw.hitRate}%)
                                                 </span>
                                             </div>
                                         )}
                                     </div>
+                                    
+                                    {kw.hashtagCount !== null && kw.hashtagCount !== undefined && (
+                                        <div className="flex items-center gap-1 text-sm mb-3">
+                                            <span className="text-pink-400">#</span>
+                                            <span className="text-gray-400">#{kw.keyword} 해시태그:</span>
+                                            <span className="font-bold text-pink-400">
+                                                {kw.hashtagCount.toLocaleString()}개 영상
+                                            </span>
+                                        </div>
+                                    )}
+                                    
+                                    {/* 터진 영상 보기 버튼 */}
+                                    {kw.hitVideoList && kw.hitVideoList.length > 0 && (
+                                        <button
+                                            onClick={() => setExpandedKeyword(expandedKeyword === index ? null : index)}
+                                            className="text-sm text-primary hover:text-primary-hover flex items-center gap-1"
+                                        >
+                                            <Icon name={expandedKeyword === index ? "chevron-up" : "chevron-down"} size={14} />
+                                            터진 영상 {kw.hitVideoList.length}개 {expandedKeyword === index ? '접기' : '보기'}
+                                        </button>
+                                    )}
+                                </div>
+                                
+                                {/* 터진 영상 목록 (펼쳐짐) */}
+                                {expandedKeyword === index && kw.hitVideoList && (
+                                    <div className="border-t border-gray-700 bg-black/30 p-3 space-y-2">
+                                        {kw.hitVideoList.map((vid, vidIndex) => (
+                                            <a
+                                                key={vidIndex}
+                                                href={`https://www.youtube.com/watch?v=${vid.id}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center gap-3 p-2 rounded hover:bg-gray-800 transition"
+                                            >
+                                                <img src={vid.thumbnail} className="w-16 h-10 rounded bg-gray-700 object-cover" />
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-sm text-white line-clamp-1">{vid.title}</div>
+                                                    <div className="text-xs text-gray-500">{vid.channelTitle}</div>
+                                                </div>
+                                                <div className="text-sm font-bold text-red-400">
+                                                    {(vid.viewCount / 10000).toFixed(0)}만
+                                                </div>
+                                            </a>
+                                        ))}
+                                    </div>
                                 )}
                             </div>
                         ))}
-                    </div>
-                    
-                    {/* API 사용량 */}
-                    <div className="text-xs text-gray-500 text-center pt-2 border-t border-gray-700">
-                        YouTube API 사용량: 이번 추출에서 약 {extractedKeywords.length * 2}회 사용
                     </div>
                 </div>
             )}
@@ -2270,6 +2334,7 @@ const updateKeywordType = (index, newType) => {
                         setKeywordTranscriptInfo(null);
                         setVideoType(null);
                         setVideoTypeMessage(null);
+                        setExpandedKeyword(null);
                     }} 
                     className="px-4 py-2 text-sm text-gray-400 hover:text-white"
                 >
@@ -2290,6 +2355,7 @@ const updateKeywordType = (index, newType) => {
 )}
 
 
+
    
         </div>
     );
@@ -2298,6 +2364,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
