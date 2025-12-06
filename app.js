@@ -191,151 +191,6 @@ const [isExtractingKeywords, setIsExtractingKeywords] = useState(false);
             showToast('사용량 초기화 완료');
         }
     };
-// ===== 키워드 추출 기능 =====
-
-// 불용어 목록 (제거할 단어들)
-const STOPWORDS = [
-    // 영어 불용어
-    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
-    'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did',
-    'will', 'would', 'could', 'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare',
-    'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'what', 'which',
-    'who', 'whom', 'where', 'when', 'why', 'how', 'all', 'each', 'every', 'both', 'few', 'more',
-    'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than',
-    'too', 'very', 'just', 'also', 'now', 'here', 'there', 'then', 'once', 'before', 'after',
-    
-    // 한국어 불용어 - 조사
-    '은', '는', '이', '가', '을', '를', '의', '에', '에서', '로', '으로', '와', '과', '도', '만',
-    '까지', '부터', '마다', '밖에', '같이', '처럼', '만큼', '대로', '보다', '라고', '라는', '이라는',
-    
-    // 한국어 불용어 - 대명사/지시어
-    '나', '너', '저', '우리', '저희', '그', '그녀', '이것', '그것', '저것', '여기', '거기', '저기',
-    '이런', '그런', '저런', '어떤', '무슨', '어느', '이렇게', '그렇게', '저렇게', '어떻게',
-    
-    // 한국어 불용어 - 일반 동사/형용사 어미
-    '하다', '되다', '있다', '없다', '같다', '보다', '오다', '가다', '주다', '받다', '알다', '모르다',
-    '하는', '되는', '있는', '없는', '같은', '보는', '오는', '가는', '주는', '받는', '아는',
-    '했다', '됐다', '있었다', '없었다', '같았다', '봤다', '왔다', '갔다', '줬다', '받았다', '알았다',
-    '하고', '되고', '있고', '없고', '같고', '보고', '오고', '가고', '주고', '받고', '알고',
-    '해서', '돼서', '있어서', '없어서', '같아서', '봐서', '와서', '가서', '줘서', '받아서',
-    '하면', '되면', '있으면', '없으면', '같으면', '보면', '오면', '가면', '주면', '받으면',
-    '합니다', '됩니다', '있습니다', '없습니다', '같습니다', '봅니다', '옵니다', '갑니다',
-    '해요', '돼요', '있어요', '없어요', '같아요', '봐요', '와요', '가요', '줘요', '받아요',
-    '하죠', '되죠', '있죠', '없죠', '같죠', '보죠', '오죠', '가죠', '주죠', '받죠',
-    
-    // 한국어 불용어 - 의미없는 단어
-    '것', '거', '수', '등', '및', '더', '안', '못', '잘', '또', '다', '막', '좀', '꽤', '매우', '정말',
-    '진짜', '완전', '엄청', '너무', '아주', '참', '되게', '굉장히', '상당히', '대단히',
-    '그냥', '일단', '우선', '먼저', '다음', '나중', '이제', '지금', '오늘', '내일', '어제',
-    '항상', '자주', '가끔', '언제나', '늘', '계속', '다시', '또한', '역시', '아마', '혹시',
-    '것들', '것도', '거야', '거예요', '거죠', '건데', '거든', '거라', '게요', '네요', '데요',
-    '있잖아', '있잖아요', '있는데', '있는데요', '없는데', '없는데요', '같은데', '같은데요',
-
-    // 추가할 불용어
-    '유일하게', '안먹', '않는', '없는', '있는', '하는', '되는', '같은',
-    '이런', '저런', '그런', '어떤', '무슨', '어느',
-    '하게', '되게', '같게', '없게', '있게',
-    '만든', '만들', '가진', '갖고', '통해', '위해', '대해', '따라',
-    '모든', '각각', '서로', '함께', '혼자', '직접', '특히', '주로',
-    '아직', '벌써', '이미', '거의', '약간', '조금', '많이', '적게',
-    '그냥', '바로', '정말', '진짜', '완전', '엄청', '너무', '매우',
-
-    // 숫자/순위 관련
-    '1위', '2위', '3위', '4위', '5위', '6위', '7위', '8위', '9위', '10위',
-    '1등', '2등', '3등', '4등', '5등', '1번', '2번', '3번', '4번', '5번',
-    '하나', '둘', '셋', '넷', '다섯', '여섯', '일곱', '여덟', '아홉', '열',
-    '첫번째', '두번째', '세번째', '첫', '번째',
-    
-    // 유튜브 관련 일반 단어
-    'shorts', 'short', 'youtube', 'video', 'channel', 'subscribe', 'like', 'comment',
-    '쇼츠', '유튜브', '영상', '채널', '구독', '좋아요', '댓글', '알림', '시청',
-    
-    // 기타 의미없는 패턴
-    '편', '화', '회', '탄', '부', '권', '개', '명', '번', '살', '세', '년', '월', '일', '시', '분', '초'
-];
-
-
-// 키워드 추출 함수 (명사 기반, 터진 영상 분석용)
-const extractKeywordsFromText = (video, transcriptText = '') => {
-    const title = video.title || '';
-    const description = video.description || '';
-    const tags = video.tags || [];
-    
-    // 해시태그 추출 (제목 + 설명에서)
-    const hashtagRegex = /#[가-힣a-zA-Z0-9_]+/g;
-    const hashtags = [...(title.match(hashtagRegex) || []), ...(description.match(hashtagRegex) || [])]
-        .map(tag => tag.replace('#', '').toLowerCase());
-    
-    // 불용어 (검색 키워드로 부적합한 단어들)
-    const stopwords = [
-        // 한국어 불용어
-        '이유', '방법', '수준', '정도', '경우', '이것', '저것', '그것', '여기', '거기',
-        '오늘', '내일', '어제', '지금', '나중', '처음', '마지막', '다음', '이번',
-        '진짜', '완전', '엄청', '정말', '너무', '매우', '아주', '참', '꽤',
-        '그냥', '일단', '우선', '역시', '아마', '혹시', '과연', '설마',
-        '하나', '둘', '셋', '모든', '각각', '여러', '많은', '적은',
-        '좋은', '나쁜', '새로운', '오래된', '큰', '작은', '높은', '낮은',
-        'shorts', 'short', '쇼츠', '구독', '좋아요', '알림', '영상',
-        // 영어 불용어
-        'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-        'of', 'with', 'by', 'from', 'this', 'that', 'these', 'those',
-        'is', 'are', 'was', 'were', 'be', 'been', 'being',
-        'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
-        'could', 'should', 'may', 'might', 'must', 'can',
-        'i', 'you', 'he', 'she', 'it', 'we', 'they', 'my', 'your', 'his', 'her',
-        'what', 'which', 'who', 'whom', 'where', 'when', 'why', 'how',
-        'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other',
-        'some', 'such', 'no', 'not', 'only', 'own', 'same', 'so', 'than',
-        'too', 'very', 'just', 'also', 'now', 'here', 'there', 'then'
-    ];
-    
-    // 동사/형용사 어미 패턴 (한국어)
-    const verbEndingPattern = /(하다|되다|있다|없다|같다|이다|된다|한다|했다|됐다|있었다|없었다|하는|되는|있는|없는|같은|했던|됐던|하고|되고|해서|돼서|하면|되면|합니다|됩니다|해요|돼요|하죠|되죠|거든|잖아|네요|군요|구나|는데|ㄴ데|을까|ㄹ까|을게|ㄹ게|었다|았다|ㅆ다)$/;
-    
-    // 조사 패턴
-    const particlePattern = /(은|는|이|가|을|를|의|에|에서|로|으로|와|과|도|만|까지|부터|라고|라는|이라는)$/;
-    
-    // 명사 추출 함수
-    const extractNouns = (text, isTitle = false) => {
-        const words = text
-            .replace(/[^\w\sㄱ-ㅎㅏ-ㅣ가-힣]/g, ' ')
-            .split(/\s+/)
-            .filter(w => w.length >= 2);
-        
-        const nouns = [];
-        
-        words.forEach(word => {
-            let cleanWord = word.toLowerCase();
-            
-            // 불용어 제외
-            if (stopwords.includes(cleanWord)) return;
-            
-            // 동사/형용사 어미 제거 및 제외
-            if (verbEndingPattern.test(cleanWord)) return;
-            
-            // 조사 제거
-            cleanWord = cleanWord.replace(particlePattern, '');
-            
-            // 최소 길이 체크 (한글 2자, 영어 3자)
-            const isKorean = /[가-힣]/.test(cleanWord);
-            if (isKorean && cleanWord.length < 2) return;
-            if (!isKorean && cleanWord.length < 3) return;
-            
-            // 숫자만 있는 것 제외
-            if (/^\d+$/.test(cleanWord)) return;
-            
-            // 감탄사 제외 (ㄷㄷ, ㅋㅋ 등)
-            if (/^[ㄱ-ㅎㅏ-ㅣ]+$/.test(cleanWord)) return;
-            
-            nouns.push({
-                word: cleanWord,
-                source: isTitle ? 'title' : 'script',
-                weight: isTitle ? 3 : 1
-            });
-        });
-        
-        return nouns;
-    };
     
     // 1. 제목에서 명사 추출 (가중치 3배)
     const titleNouns = extractNouns(title, true);
@@ -443,48 +298,46 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
         let isManual = false;
         
         // 스크립트 가져오기 (하이브리드: 로컬 우선 → Supadata 백업)
-if (manualScriptText && manualScriptText.trim()) {
-    transcriptText = manualScriptText.trim();
-    isManual = true;
-} else {
-    let localSuccess = false;
-    
-    // 1차: 로컬 서버 시도 (무료, 무제한)
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-        
-        const localResponse = await fetch(`http://localhost:5000/api/transcript?video_id=${video.id}`, {
-            signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        
-        const localData = await localResponse.json();
-        if (localData.success && localData.transcript) {
-            transcriptText = localData.transcript;
-            localSuccess = true;
-            console.log('✅ 로컬 서버에서 자막 가져옴 (무료)');
-        }
-    } catch (e) {
-        console.log('로컬 서버 연결 안됨:', e.message);
-    }
-    
-    // 2차: 로컬 실패시 Supadata API (월 100회 제한)
-    if (!localSuccess) {
-        try {
-            const response = await fetch(`${CONFIG.TRANSCRIPT_API}?video_id=${video.id}`);
-            const data = await response.json();
-            if (data.success && data.transcript) {
-                transcriptText = data.transcript;
-                console.log('✅ Supadata에서 자막 가져옴 (API 사용)');
+        if (manualScriptText && manualScriptText.trim()) {
+            transcriptText = manualScriptText.trim();
+            isManual = true;
+        } else {
+            let localSuccess = false;
+            
+            // 1차: 로컬 서버 시도 (무료, 무제한)
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30000);
+                
+                const localResponse = await fetch(`http://localhost:5000/api/transcript?video_id=${video.id}`, {
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                
+                const localData = await localResponse.json();
+                if (localData.success && localData.transcript) {
+                    transcriptText = localData.transcript;
+                    localSuccess = true;
+                    console.log('✅ 로컬 서버에서 자막 가져옴 (무료)');
+                }
+            } catch (e) {
+                console.log('로컬 서버 연결 안됨:', e.message);
             }
-        } catch (e2) {
-            console.log('스크립트 가져오기 실패:', e2);
+            
+            // 2차: 로컬 실패시 Supadata API (월 100회 제한)
+            if (!localSuccess) {
+                try {
+                    const response = await fetch(`${CONFIG.TRANSCRIPT_API}?video_id=${video.id}`);
+                    const data = await response.json();
+                    if (data.success && data.transcript) {
+                        transcriptText = data.transcript;
+                        console.log('✅ Supadata에서 자막 가져옴 (API 사용)');
+                    }
+                } catch (e2) {
+                    console.log('스크립트 가져오기 실패:', e2);
+                }
+            }
         }
-    }
-}
-
         
         // 스크립트 정보 저장
         setKeywordTranscriptInfo({
@@ -492,8 +345,9 @@ if (manualScriptText && manualScriptText.trim()) {
             length: transcriptText.length,
             isManual
         });
+        
         console.log('📤 Gemini 요청:', { title: video.title, transcript: transcriptText.slice(0, 100) });
-
+        
         // Gemini로 키워드 추출
         const keywordResponse = await fetch(CONFIG.KEYWORD_API, {
             method: 'POST',
@@ -508,7 +362,7 @@ if (manualScriptText && manualScriptText.trim()) {
         
         const keywordResult = await keywordResponse.json();
         console.log('📥 Gemini 응답:', keywordResult);
-
+        
         if (!keywordResult.success || !keywordResult.keywords) {
             throw new Error('키워드 추출 실패');
         }
@@ -516,25 +370,29 @@ if (manualScriptText && manualScriptText.trim()) {
         // 키워드 배열 생성
         let keywords = keywordResult.keywords.map(kw => ({
             keyword: kw,
+            searchKeyword: kw.split('(')[0].trim(), // 괄호 번역 제거한 검색용 키워드
             sources: ['AI'],
             hitVideos: null,
             totalSearched: null,
             hitRate: null,
             hashtagCount: null,
             hitVideoList: [],
+            relatedKeywords: [], // 연관 키워드
             type: 'unknown'
         }));
         
         setVideoType(keywordResult.videoType);
         setVideoTypeMessage(keywordResult.videoType === 'content' ? '키워드보다 콘텐츠/썸네일이 중요한 영상입니다' : null);
         
-        // 키워드형 영상이면 YouTube 검색
+        // 키워드형 영상이면 YouTube 검색 + 연관 키워드
         if (keywordResult.videoType === 'keyword' && keywords.length > 0) {
             const searchPromises = keywords.map(async (kw) => {
+                const searchTerm = kw.searchKeyword; // 괄호 제거된 키워드로 검색
+                
                 try {
                     // 1. 일반 검색 (상위 50개)
                     const searchResponse = await fetch(
-                        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(kw.keyword)}&type=video&maxResults=50&key=${CONFIG.API_KEYS[currentKeyIndex]}`
+                        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(searchTerm)}&type=video&maxResults=50&key=${CONFIG.API_KEYS[currentKeyIndex]}`
                     );
                     const searchData = await searchResponse.json();
                     
@@ -543,33 +401,29 @@ if (manualScriptText && manualScriptText.trim()) {
                         
                         // 조회수 가져오기
                         const statsResponse = await fetch(
-    `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${videoIds}&key=${CONFIG.API_KEYS[currentKeyIndex]}`
-);
-
+                            `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${videoIds}&key=${CONFIG.API_KEYS[currentKeyIndex]}`
+                        );
                         const statsData = await statsResponse.json();
                         
                         // 숏폼(60초 이하) 100만+ / 롱폼(60초 초과) 50만+ 필터
-const hitVideos = statsData.items?.filter(v => {
-    const viewCount = parseInt(v.statistics?.viewCount || 0);
-    const duration = v.contentDetails?.duration || '';
-    
-    // ISO 8601 duration 파싱 (PT1M30S = 90초)
-    const durationMatch = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-    let totalSeconds = 0;
-    if (durationMatch) {
-        const hours = parseInt(durationMatch[1] || 0);
-        const minutes = parseInt(durationMatch[2] || 0);
-        const seconds = parseInt(durationMatch[3] || 0);
-        totalSeconds = hours * 3600 + minutes * 60 + seconds;
-    }
-    
-    // 숏폼: 60초 이하 → 100만+, 롱폼: 60초 초과 → 50만+
-    const isShort = totalSeconds <= 60;
-    const threshold = isShort ? 1000000 : 500000;
-    
-    return viewCount >= threshold;
-}) || [];
-
+                        const hitVideos = statsData.items?.filter(v => {
+                            const viewCount = parseInt(v.statistics?.viewCount || 0);
+                            const duration = v.contentDetails?.duration || '';
+                            
+                            const durationMatch = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+                            let totalSeconds = 0;
+                            if (durationMatch) {
+                                const hours = parseInt(durationMatch[1] || 0);
+                                const minutes = parseInt(durationMatch[2] || 0);
+                                const seconds = parseInt(durationMatch[3] || 0);
+                                totalSeconds = hours * 3600 + minutes * 60 + seconds;
+                            }
+                            
+                            const isShort = totalSeconds <= 60;
+                            const threshold = isShort ? 1000000 : 500000;
+                            
+                            return viewCount >= threshold;
+                        }) || [];
                         
                         kw.hitVideos = hitVideos.length;
                         kw.totalSearched = searchData.items.length;
@@ -586,10 +440,10 @@ const hitVideos = statsData.items?.filter(v => {
                         }));
                     }
                     
-                    // 2. 해시태그 검색
+                    // 2. 해시태그 검색 (괄호 제거된 키워드로)
                     try {
                         const hashtagResponse = await fetch(
-                            `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent('#' + kw.keyword)}&type=video&maxResults=1&key=${CONFIG.API_KEYS[currentKeyIndex]}`
+                            `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent('#' + searchTerm)}&type=video&maxResults=1&key=${CONFIG.API_KEYS[currentKeyIndex]}`
                         );
                         const hashtagData = await hashtagResponse.json();
                         kw.hashtagCount = hashtagData.pageInfo?.totalResults || 0;
@@ -597,8 +451,22 @@ const hitVideos = statsData.items?.filter(v => {
                         kw.hashtagCount = null;
                     }
                     
+                    // 3. 연관 키워드 가져오기
+                    try {
+                        const relatedResponse = await fetch(
+                            `https://transcript-api-dtm5.onrender.com/api/related-keywords?keyword=${encodeURIComponent(searchTerm)}`
+                        );
+                        const relatedData = await relatedResponse.json();
+                        if (relatedData.success && relatedData.related) {
+                            kw.relatedKeywords = relatedData.related;
+                        }
+                    } catch (e) {
+                        console.log('연관 키워드 가져오기 실패:', e);
+                        kw.relatedKeywords = [];
+                    }
+                    
                 } catch (error) {
-                    console.error(`키워드 검색 실패 (${kw.keyword}):`, error);
+                    console.error(`키워드 검색 실패 (${searchTerm}):`, error);
                 }
                 return kw;
             });
@@ -615,6 +483,7 @@ const hitVideos = statsData.items?.filter(v => {
         setIsExtractingKeywords(false);
     }
 };
+
 
 
 // 키워드 저장
@@ -2441,6 +2310,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
