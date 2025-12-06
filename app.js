@@ -299,7 +299,11 @@ const analyzeKeywordTrends = async (keywords) => {
 };
 
 // 키워드 추출 버튼 클릭
+// 키워드 추출 버튼 클릭
 const handleExtractKeywords = async (video, manualScriptText = null) => {
+    console.log('video 객체:', video);  
+    console.log('video keys:', Object.keys(video)); 
+    setIsExtractingKeywords(true);
     setIsExtractingKeywords(true);
     setExtractedKeywords([]);
     setKeywordTranscriptInfo(null);
@@ -2069,6 +2073,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
