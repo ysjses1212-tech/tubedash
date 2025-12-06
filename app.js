@@ -322,7 +322,7 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
         } else {
             // 자동 API로 스크립트 가져오기 시도
             try {
-                const response = await fetch(`${CONFIG.TRANSCRIPT_API}?video_id=${video.videoId || video.video_id}`);
+                const response = await fetch(`${CONFIG.TRANSCRIPT_API}?video_id=${video.id}`);
                 const data = await response.json();
                 if (data.success && data.transcript) {
                     transcriptText = data.transcript;
@@ -2079,6 +2079,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
