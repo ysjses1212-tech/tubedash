@@ -12,6 +12,7 @@ const CONFIG = {
     // 할당량 설정
     TRANSCRIPT_API: 'https://transcript-api-dtm5.onrender.com/api/transcript',
     TRENDS_API: 'https://transcript-api-dtm5.onrender.com/api/trends',
+    KEYWORD_API: 'https://transcript-api-dtm5.onrender.com/api/extract-keywords',
     SERPAPI_KEY: '977335de6ae29be45b2de7b51c7bd335ba72d94d876d547a61f9b37455f4964a',
     DAILY_QUOTA_LIMIT: 10000,
     AUTO_SWITCH_THRESHOLD: 0.8  // 80%에서 자동 전환
@@ -115,6 +116,7 @@ window.extractVideoId = extractVideoId;
 window.getKeyQuotas = getKeyQuotas;
 
 window.saveKeyQuotas = saveKeyQuotas;
+
 
 
 
