@@ -340,22 +340,55 @@ const extractKeywordsFromText = (allText, transcriptText = '') => {
         }
     });
     
-    // 2단어 복합 키워드 (더 가치 있음)
-    for (let i = 0; i < words.length - 1; i++) {
-        const word1 = words[i].toLowerCase();
-        const word2 = words[i + 1].toLowerCase();
-        
-        // 둘 다 유효해야 함
-        if (invalidPatterns.some(p => p.test(word1))) continue;
-        if (invalidPatterns.some(p => p.test(word2))) continue;
-        if (STOPWORDS.includes(word1) || STOPWORDS.includes(word2)) continue;
-        
-        // 최소 길이
-        if (word1.length < 2 || word2.length < 2) continue;
-        
+    // 2단어 복합 키워드 (엄격한 조건)
+const validCompoundEndings = [
+    // 명사형 어미만 허용
+    /화$/, /템$/, /법$/, /용$/, /류$/, /품$/, /물$/,
+    /추천$/, /리뷰$/, /비교$/, /순위$/, /방법$/, /정리$/,
+    // 영어
+    /^[a-zA-Z]+$/,
+    // 숫자+단위
+    /^[0-9]+(년|월|일|위|등|개|가지|종|mm|kg|cm)$/,
+];
+
+const invalidCompoundWords = [
+    // 동사/형용사 어미
+    /(하는|되는|있는|없는|같은|된|한|할|함)$/,
+    /(에서|라고|으로|하게|는게|했다|된다|한다)$/,
+    /(목표|이중|선포|배치|구경)/, // 이 영상 특정 단어들은 제외
+];
+
+for (let i = 0; i < words.length - 1; i++) {
+    const word1 = words[i].toLowerCase();
+    const word2 = words[i + 1].toLowerCase();
+    
+    // 기본 필터
+    if (STOPWORDS.includes(word1) || STOPWORDS.includes(word2)) continue;
+    if (word1.length < 2 || word2.length < 2) continue;
+    
+    // 블랙리스트 체크
+    if (invalidPatterns.some(p => p.test(word1))) continue;
+    if (invalidPatterns.some(p => p.test(word2))) continue;
+    
+    // 복합어 금지 패턴 체크
+    if (invalidCompoundWords.some(p => p.test(word1) || p.test(word2))) continue;
+    
+    // 둘 중 하나는 명사형이어야 함
+    const word1Valid = validCompoundEndings.some(p => p.test(word1)) || /^[가-힣]{2,}$/.test(word1);
+    const word2Valid = validCompoundEndings.some(p => p.test(word2)) || /^[가-힣]{2,}$/.test(word2);
+    
+    // 브랜드 + 제품 형태 (챌린저 전차, 나이키 운동화 등)
+    const isBrandProduct = /^[가-힣a-zA-Z]{2,}$/.test(word1) && /^[가-힣]{2,}(화|템|차|기|폰|북)$/.test(word2);
+    
+    // 숫자 + 명사 (2027년, 148대 등) - 1단어로 이미 처리됨
+    const isNumberNoun = /^[0-9]+$/.test(word1) && /^[가-힣]+$/.test(word2);
+    
+    if ((word1Valid && word2Valid) || isBrandProduct) {
         const phrase = `${word1} ${word2}`;
-        keywordCandidates[phrase] = (keywordCandidates[phrase] || 0) + 2; // 복합어 가중치
+        keywordCandidates[phrase] = (keywordCandidates[phrase] || 0) + 2;
     }
+}
+
     
     // 스크립트 단어 체크 (source 구분용)
     const scriptWords = new Set();
@@ -2251,6 +2284,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
