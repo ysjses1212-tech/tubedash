@@ -280,30 +280,14 @@ const analyzeKeywordTrends = async (keywords) => {
         const kw = top5[i];
         try {
             const response = await fetch(
-                `https://serpapi.com/search.json?engine=google_trends&q=${encodeURIComponent(kw.keyword)}&data_type=TIMESERIES&api_key=${CONFIG.SERPAPI_KEY}`
+                `${CONFIG.TRENDS_API}?keyword=${encodeURIComponent(kw.keyword)}`
             );
             const data = await response.json();
             
-            // 사용량 증가
-            setSerpApiUsage(prev => prev + 1);
-            
-            // 트렌드 분석
-            if (data.interest_over_time && data.interest_over_time.timeline_data) {
-                const timeline = data.interest_over_time.timeline_data;
-                const values = timeline.slice(-12).map(t => t.values[0]?.extracted_value || 0);
-                
-                // 최근 3개월 vs 이전 평균 비교
-                const recent = values.slice(-3).reduce((a, b) => a + b, 0) / 3;
-                const earlier = values.slice(0, -3).reduce((a, b) => a + b, 0) / Math.max(values.length - 3, 1);
-                
-                // 급상승이면 숏테일, 꾸준하면 롱테일
-                if (recent > earlier * 1.5) {
-                    updatedKeywords[i].type = 'shorttail';
-                    updatedKeywords[i].trendType = 'rising';
-                } else if (earlier > 0) {
-                    updatedKeywords[i].type = 'longtail';
-                    updatedKeywords[i].trendType = 'steady';
-                }
+            if (data.success) {
+                updatedKeywords[i].type = data.keyword_type;
+                updatedKeywords[i].trendType = data.trend_type;
+                setSerpApiUsage(prev => prev + 1);
             }
         } catch (error) {
             console.error(`Trends 분석 실패 (${kw.keyword}):`, error);
@@ -313,7 +297,6 @@ const analyzeKeywordTrends = async (keywords) => {
     setIsAnalyzingTrends(false);
     return updatedKeywords;
 };
-
 
 // 키워드 추출 버튼 클릭
 const handleExtractKeywords = async (video, manualScriptText = null) => {
@@ -335,7 +318,7 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
         } else {
             // 자동 API로 스크립트 가져오기 시도
             try {
-                const response = await fetch(`${CONFIG.TRANSCRIPT_API}?video_id=${video.videoId}`);
+                const response = await fetch(`${CONFIG.TRANSCRIPT_API}?video_id=${video.videoId || video.video_id}`);
                 const data = await response.json();
                 if (data.success && data.transcript) {
                     transcriptText = data.transcript;
@@ -2086,6 +2069,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
