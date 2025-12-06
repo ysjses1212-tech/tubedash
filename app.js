@@ -1316,12 +1316,15 @@ const updateKeywordType = (index, newType) => {
         </button>
        <button 
     onClick={() => {
-        setKeywordTargetVideo(v);
-        setIsKeywordModalOpen(true);
-        setExtractedKeywords([]);
-        setManualScript('');
-        setUseManualScript(false);
-    }} 
+    console.log('클릭한 비디오:', v);
+    console.log('비디오 키들:', Object.keys(v));
+    setKeywordTargetVideo(v);
+    setIsKeywordModalOpen(true);
+    setExtractedKeywords([]);
+    setManualScript('');
+    setUseManualScript(false);
+}}
+ 
     className="col-span-2 flex items-center justify-center gap-1 py-1.5 text-xs bg-yellow-900/30 hover:bg-yellow-600 text-yellow-400 hover:text-white rounded transition mt-1"
 >
     <Icon name="zap" size={12} /> 키워드 추출
@@ -1347,12 +1350,15 @@ const updateKeywordType = (index, newType) => {
         </div>
         <button 
     onClick={() => {
-        setKeywordTargetVideo(v);
-        setIsKeywordModalOpen(true);
-        setExtractedKeywords([]);
-        setManualScript('');
-        setUseManualScript(false);
-    }} 
+    console.log('클릭한 비디오:', v);
+    console.log('비디오 키들:', Object.keys(v));
+    setKeywordTargetVideo(v);
+    setIsKeywordModalOpen(true);
+    setExtractedKeywords([]);
+    setManualScript('');
+    setUseManualScript(false);
+}}
+
     className="w-full flex items-center justify-center gap-1 py-1.5 text-xs bg-yellow-900/30 hover:bg-yellow-600 text-yellow-400 hover:text-white rounded transition"
 >
     <Icon name="zap" size={12} /> 키워드 추출
@@ -2073,6 +2079,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
