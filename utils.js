@@ -11,6 +11,7 @@ const CONFIG = {
     SUPABASE_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4dWl4ZG9xdWNndXRxbHhhcWdyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ1MzM4OTUsImV4cCI6MjA4MDEwOTg5NX0.ADR6Ppx_A0TUhgSnlkhKJ9_Nwm6RsfVMQmUiKNriAyE',
     // 할당량 설정
     TRANSCRIPT_API: 'https://transcript-api-dtm5.onrender.com/api/transcript',
+    TRENDS_API: 'https://transcript-api-dtm5.onrender.com/api/trends',
     SERPAPI_KEY: '977335de6ae29be45b2de7b51c7bd335ba72d94d876d547a61f9b37455f4964a',
     DAILY_QUOTA_LIMIT: 10000,
     AUTO_SWITCH_THRESHOLD: 0.8  // 80%에서 자동 전환
@@ -114,6 +115,7 @@ window.extractVideoId = extractVideoId;
 window.getKeyQuotas = getKeyQuotas;
 
 window.saveKeyQuotas = saveKeyQuotas;
+
 
 
 
