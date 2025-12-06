@@ -74,6 +74,8 @@ const App = () => {
     const [currentKeyIndex, setCurrentKeyIndex] = useState(() => getKeyQuotas().currentIndex || 0);
     
     // 기본 상태
+    const [videoType, setVideoType] = useState(null); // 'keyword' or 'content'
+    const [videoTypeMessage, setVideoTypeMessage] = useState(null);
     const [viewMode, setViewMode] = useState('card');
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [toast, setToast] = useState(null);
@@ -243,209 +245,148 @@ const STOPWORDS = [
 ];
 
 
-// 키워드 추출 함수 (터진 영상 분석용)
-const extractKeywordsFromText = (allText, transcriptText = '') => {
-    const hasScript = transcriptText.length > 0;
+// 키워드 추출 함수 (명사 기반, 터진 영상 분석용)
+const extractKeywordsFromText = (video, transcriptText = '') => {
+    const title = video.title || '';
+    const description = video.description || '';
+    const tags = video.tags || [];
     
-    // 원본 텍스트에서 해시태그 먼저 추출
-    const hashtags = allText.match(/#[가-힣a-zA-Z0-9_]+/g) || [];
-    const cleanHashtags = hashtags.map(tag => tag.replace('#', '').toLowerCase());
+    // 해시태그 추출 (제목 + 설명에서)
+    const hashtagRegex = /#[가-힣a-zA-Z0-9_]+/g;
+    const hashtags = [...(title.match(hashtagRegex) || []), ...(description.match(hashtagRegex) || [])]
+        .map(tag => tag.replace('#', '').toLowerCase());
     
-    // 텍스트 정리
-    let cleanText = allText
-        .replace(/#[가-힣a-zA-Z0-9_]+/g, ' ')  // 해시태그 제거 (별도 처리)
-        .replace(/[^\w\sㄱ-ㅎㅏ-ㅣ가-힣]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    
-    const words = cleanText.split(' ').filter(word => word.length >= 2);
-    const keywordCandidates = {};
-    
-    // 해시태그는 무조건 키워드로 (가중치 높게)
-    cleanHashtags.forEach(tag => {
-        if (tag.length >= 2) {
-            keywordCandidates[tag] = (keywordCandidates[tag] || 0) + 5;
-        }
-    });
-    
-    // 키워드로 인정되는 패턴 (화이트리스트)
-    const validKeywordPatterns = [
-        // 명사형 어미
-        /^.{2,}(화|템|법|기|용|류|품|물|감|력|성|도|량|비|값|급|형|식|계|권|론|학|술|업|상|관|원|장|실|부|과|팀)$/,
-        
-        // 제품/서비스 관련
-        /^.{2,}(추천|리뷰|비교|순위|모음|정리|소개|방법|꿀팁|노하우)$/,
-        
-        // 수식어 + 명사
-        /^(best|top|최고|최신|인기|필수|가성비|입문|초보|고급|프로|베스트)$/i,
-        
-        // 영어 단어 (2글자 이상)
-        /^[a-zA-Z]{2,}$/,
-        
-        // 숫자 + 한글 조합 (2024년, 3가지 등)
-        /^[0-9]+[가-힣]+$/,
-        /^[가-힣]+[0-9]+$/,
-        
-        // 브랜드/고유명사 패턴 (대문자 시작 또는 전체 대문자)
-        /^[A-Z][a-zA-Z]+$/,
-        /^[A-Z]{2,}$/,
+    // 불용어 (검색 키워드로 부적합한 단어들)
+    const stopwords = [
+        // 한국어 불용어
+        '이유', '방법', '수준', '정도', '경우', '이것', '저것', '그것', '여기', '거기',
+        '오늘', '내일', '어제', '지금', '나중', '처음', '마지막', '다음', '이번',
+        '진짜', '완전', '엄청', '정말', '너무', '매우', '아주', '참', '꽤',
+        '그냥', '일단', '우선', '역시', '아마', '혹시', '과연', '설마',
+        '하나', '둘', '셋', '모든', '각각', '여러', '많은', '적은',
+        '좋은', '나쁜', '새로운', '오래된', '큰', '작은', '높은', '낮은',
+        'shorts', 'short', '쇼츠', '구독', '좋아요', '알림', '영상',
+        // 영어 불용어
+        'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+        'of', 'with', 'by', 'from', 'this', 'that', 'these', 'those',
+        'is', 'are', 'was', 'were', 'be', 'been', 'being',
+        'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
+        'could', 'should', 'may', 'might', 'must', 'can',
+        'i', 'you', 'he', 'she', 'it', 'we', 'they', 'my', 'your', 'his', 'her',
+        'what', 'which', 'who', 'whom', 'where', 'when', 'why', 'how',
+        'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other',
+        'some', 'such', 'no', 'not', 'only', 'own', 'same', 'so', 'than',
+        'too', 'very', 'just', 'also', 'now', 'here', 'there', 'then'
     ];
     
-    // 무조건 제외되는 패턴 (블랙리스트)
-    const invalidPatterns = [
-        /^\d+$/, // 숫자만
-        /^[ㄱ-ㅎㅏ-ㅣ]+$/, // 자음/모음만
-        /^.{1}$/, // 1글자
+    // 동사/형용사 어미 패턴 (한국어)
+    const verbEndingPattern = /(하다|되다|있다|없다|같다|이다|된다|한다|했다|됐다|있었다|없었다|하는|되는|있는|없는|같은|했던|됐던|하고|되고|해서|돼서|하면|되면|합니다|됩니다|해요|돼요|하죠|되죠|거든|잖아|네요|군요|구나|는데|ㄴ데|을까|ㄹ까|을게|ㄹ게|었다|았다|ㅆ다)$/;
+    
+    // 조사 패턴
+    const particlePattern = /(은|는|이|가|을|를|의|에|에서|로|으로|와|과|도|만|까지|부터|라고|라는|이라는)$/;
+    
+    // 명사 추출 함수
+    const extractNouns = (text, isTitle = false) => {
+        const words = text
+            .replace(/[^\w\sㄱ-ㅎㅏ-ㅣ가-힣]/g, ' ')
+            .split(/\s+/)
+            .filter(w => w.length >= 2);
         
-        // 동사/형용사 (어미로 판단)
-        /다$/, // ~다로 끝나는 동사/형용사
-        /(했|된|된|간|온|본|먹|잔|산|있|없|같|싶|좋|많|적)다$/,
-        /(하|되|가|오|보|먹|자|사|있|없)고$/,
-        /(하|되|가|오|보|먹|자|사)면$/,
-        /(하|되|가|오|보|먹|자|사)니까$/,
-        /(하|되|가|오|보|먹|자|사)서$/,
-        /는데$/, /거든$/, /잖아$/, /네요$/, /군요$/, /구나$/,
+        const nouns = [];
         
-        // 접속사/부사/감탄사
-        /^(근데|그런데|그래서|그러면|그러나|하지만|그리고|또한|때문|이게|그게|저게)$/,
-        /^(아마|혹시|설마|과연|정말|진짜|완전|엄청|너무|매우|아주|참|꽤)$/,
-        /^(일단|우선|먼저|다음|나중|이제|지금|오늘|내일|어제|항상|자주|가끔)$/,
-        /^(그렇기|어떻게|왜냐하면|그러니까|아무튼|어쨌든|결국|역시)$/,
-        
-        // 대명사/지시어
-        /^(이거|그거|저거|여기|거기|저기|이것|그것|저것|뭐|누구|어디|언제|이런|그런|저런)$/,
-        
-        // 조사가 붙은 형태
-        /(은|는|이|가|을|를|의|에|로|와|과|도|만|요|죠)$/,
-    ];
-    
-    // 1단어 분석
-    words.forEach(word => {
-        const lowerWord = word.toLowerCase();
-        
-        // 블랙리스트 체크
-        if (invalidPatterns.some(p => p.test(lowerWord))) return;
-        if (STOPWORDS.includes(lowerWord)) return;
-        
-        // 3글자 이상만 (한글 기준)
-        if (/[가-힣]/.test(word) && word.length < 3) return;
-        
-        // 화이트리스트 체크 또는 기본 명사 조건
-        const isValidPattern = validKeywordPatterns.some(p => p.test(word));
-        const isLikelyNoun = /[가-힣]/.test(word) && !/[다고면서요죠]$/.test(word);
-        const isEnglish = /^[a-zA-Z]+$/.test(word) && word.length >= 2;
-        
-        if (isValidPattern || isLikelyNoun || isEnglish) {
-            keywordCandidates[lowerWord] = (keywordCandidates[lowerWord] || 0) + 1;
-        }
-    });
-    
-    // 2단어 복합 키워드 (엄격한 조건)
-const validCompoundEndings = [
-    // 명사형 어미만 허용
-    /화$/, /템$/, /법$/, /용$/, /류$/, /품$/, /물$/,
-    /추천$/, /리뷰$/, /비교$/, /순위$/, /방법$/, /정리$/,
-    // 영어
-    /^[a-zA-Z]+$/,
-    // 숫자+단위
-    /^[0-9]+(년|월|일|위|등|개|가지|종|mm|kg|cm)$/,
-];
-
-const invalidCompoundWords = [
-    // 동사/형용사 어미
-    /(하는|되는|있는|없는|같은|된|한|할|함)$/,
-    /(에서|라고|으로|하게|는게|했다|된다|한다)$/,
-    /(목표|이중|선포|배치|구경)/, // 이 영상 특정 단어들은 제외
-];
-
-for (let i = 0; i < words.length - 1; i++) {
-    const word1 = words[i].toLowerCase();
-    const word2 = words[i + 1].toLowerCase();
-    
-    // 기본 필터
-    if (STOPWORDS.includes(word1) || STOPWORDS.includes(word2)) continue;
-    if (word1.length < 2 || word2.length < 2) continue;
-    
-    // 블랙리스트 체크
-    if (invalidPatterns.some(p => p.test(word1))) continue;
-    if (invalidPatterns.some(p => p.test(word2))) continue;
-    
-    // 복합어 금지 패턴 체크
-    if (invalidCompoundWords.some(p => p.test(word1) || p.test(word2))) continue;
-    
-    // 둘 중 하나는 명사형이어야 함
-    const word1Valid = validCompoundEndings.some(p => p.test(word1)) || /^[가-힣]{2,}$/.test(word1);
-    const word2Valid = validCompoundEndings.some(p => p.test(word2)) || /^[가-힣]{2,}$/.test(word2);
-    
-    // 브랜드 + 제품 형태 (챌린저 전차, 나이키 운동화 등)
-    const isBrandProduct = /^[가-힣a-zA-Z]{2,}$/.test(word1) && /^[가-힣]{2,}(화|템|차|기|폰|북)$/.test(word2);
-    
-    // 숫자 + 명사 (2027년, 148대 등) - 1단어로 이미 처리됨
-    const isNumberNoun = /^[0-9]+$/.test(word1) && /^[가-힣]+$/.test(word2);
-    
-    if ((word1Valid && word2Valid) || isBrandProduct) {
-        const phrase = `${word1} ${word2}`;
-        keywordCandidates[phrase] = (keywordCandidates[phrase] || 0) + 2;
-    }
-}
-
-    
-    // 스크립트 단어 체크 (source 구분용)
-    const scriptWords = new Set();
-    if (hasScript) {
-        transcriptText.toLowerCase().split(/\s+/).forEach(word => {
-            if (word.length >= 2) scriptWords.add(word);
+        words.forEach(word => {
+            let cleanWord = word.toLowerCase();
+            
+            // 불용어 제외
+            if (stopwords.includes(cleanWord)) return;
+            
+            // 동사/형용사 어미 제거 및 제외
+            if (verbEndingPattern.test(cleanWord)) return;
+            
+            // 조사 제거
+            cleanWord = cleanWord.replace(particlePattern, '');
+            
+            // 최소 길이 체크 (한글 2자, 영어 3자)
+            const isKorean = /[가-힣]/.test(cleanWord);
+            if (isKorean && cleanWord.length < 2) return;
+            if (!isKorean && cleanWord.length < 3) return;
+            
+            // 숫자만 있는 것 제외
+            if (/^\d+$/.test(cleanWord)) return;
+            
+            // 감탄사 제외 (ㄷㄷ, ㅋㅋ 등)
+            if (/^[ㄱ-ㅎㅏ-ㅣ]+$/.test(cleanWord)) return;
+            
+            nouns.push({
+                word: cleanWord,
+                source: isTitle ? 'title' : 'script',
+                weight: isTitle ? 3 : 1
+            });
         });
+        
+        return nouns;
+    };
+    
+    // 1. 제목에서 명사 추출 (가중치 3배)
+    const titleNouns = extractNouns(title, true);
+    
+    // 2. 태그에서 명사 추출 (가중치 2배)
+    const tagNouns = tags
+        .filter(tag => !stopwords.includes(tag.toLowerCase()))
+        .filter(tag => tag.length >= 2)
+        .map(tag => ({ word: tag.toLowerCase(), source: 'tag', weight: 2 }));
+    
+    // 3. 해시태그 (가중치 2배)
+    const hashtagNouns = hashtags
+        .filter(tag => !stopwords.includes(tag))
+        .filter(tag => tag.length >= 2)
+        .map(tag => ({ word: tag, source: 'hashtag', weight: 2 }));
+    
+    // 4. 스크립트에서 명사 추출 (제목 키워드가 부족할 때만)
+    let scriptNouns = [];
+    if (titleNouns.length < 2 && transcriptText) {
+        // 한글만 추출 (외국어 스크립트 제외)
+        const koreanOnly = transcriptText.replace(/[^\sㄱ-ㅎㅏ-ㅣ가-힣]/g, ' ');
+        scriptNouns = extractNouns(koreanOnly, false);
     }
     
-    // 점수 계산 및 정렬
-    const scoredKeywords = Object.entries(keywordCandidates)
-        .filter(([keyword, count]) => {
-            // 최종 필터: 최소 빈도 또는 해시태그
-            return count >= 1;
-        })
-        .map(([keyword, count]) => {
-            let score = count;
-            
-            // 해시태그 보너스
-            if (cleanHashtags.includes(keyword)) score += 10;
-            
-            // 복합 키워드 보너스
-            if (keyword.includes(' ')) score *= 2;
-            
-            // 영어+한글 혼합 보너스
-            if (/[a-zA-Z]/.test(keyword) && /[가-힣]/.test(keyword)) score *= 1.5;
-            
-            // 화이트리스트 패턴 보너스
-            if (validKeywordPatterns.some(p => p.test(keyword))) score *= 1.5;
-            
-            return { keyword, count, score };
-        })
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 15);
+    // 모든 명사 합치기
+    const allNouns = [...titleNouns, ...tagNouns, ...hashtagNouns, ...scriptNouns];
     
-    // 결과 생성
-    return scoredKeywords.map(({ keyword, count }) => {
-        let source = 'description';
-        
-        if (cleanHashtags.includes(keyword)) {
-            source = 'title';
-        } else if (keyword.split(' ').some(w => scriptWords.has(w))) {
-            source = 'script';
-        } else if (count >= 3) {
-            source = 'title';
+    // 단어별 점수 계산
+    const wordScores = {};
+    allNouns.forEach(({ word, source, weight }) => {
+        if (!wordScores[word]) {
+            wordScores[word] = { word, score: 0, sources: new Set() };
         }
-        
-        return {
-            keyword,
-            frequency: count,
-            type: 'unknown',
-            trendType: 'unknown',
-            source
-        };
+        wordScores[word].score += weight;
+        wordScores[word].sources.add(source);
     });
+    
+    // 점수순 정렬 후 상위 5개
+    const topKeywords = Object.values(wordScores)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5)
+        .map(({ word, score, sources }) => ({
+            keyword: word,
+            score,
+            sources: Array.from(sources),
+            type: 'keyword', // 나중에 터진 영상 수로 업데이트
+            hitVideos: null, // 터진 영상 수
+            totalViews: null // 총 조회수
+        }));
+    
+    // 키워드가 0~1개면 콘텐츠형 영상
+    const videoType = topKeywords.length <= 1 ? 'content' : 'keyword';
+    
+    return {
+        keywords: topKeywords,
+        videoType,
+        message: videoType === 'content' 
+            ? '키워드보다 콘텐츠/썸네일이 중요한 영상입니다' 
+            : null
+    };
 };
-
 
 
 // SerpAPI 사용량 저장
@@ -483,20 +424,15 @@ const analyzeKeywordTrends = async (keywords) => {
 
 // 키워드 추출 버튼 클릭
 const handleExtractKeywords = async (video, manualScriptText = null) => {
-    console.log('video 객체:', video);
-    console.log('video keys:', Object.keys(video));
-    
     setIsExtractingKeywords(true);
     setExtractedKeywords([]);
     setKeywordTranscriptInfo(null);
     
     try {
-        // 1. 제목 + 설명
-        let allText = `${video.title} ${video.title} ${video.title} ${video.description || ''}`;
         let transcriptText = '';
         let isManual = false;
         
-        // 2. 스크립트 처리
+        // 스크립트 가져오기
         if (manualScriptText && manualScriptText.trim()) {
             transcriptText = manualScriptText.trim();
             isManual = true;
@@ -512,39 +448,61 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
             }
         }
         
-        if (transcriptText) {
-            allText += ' ' + transcriptText;
-        }
-        
+        // 스크립트 정보 저장
         setKeywordTranscriptInfo({
             hasTranscript: transcriptText.length > 0,
             length: transcriptText.length,
-            isManual: isManual
+            isManual
         });
         
-        // 3. 키워드 추출
-        let extracted = extractKeywordsFromText(allText, transcriptText);
+        // 키워드 추출 (새로운 로직)
+        const result = extractKeywordsFromText(video, transcriptText);
         
-        // 4. 자동으로 Google Trends 분석 (상위 5개)
-        const top5 = extracted.slice(0, 5);
-        for (let i = 0; i < top5.length; i++) {
-            try {
-                const response = await fetch(
-                    `${CONFIG.TRENDS_API}?keyword=${encodeURIComponent(top5[i].keyword)}`
-                );
-                const data = await response.json();
-                
-                if (data.success) {
-                    extracted[i].type = data.keyword_type;
-                    extracted[i].trendType = data.trend_type;
-                    setSerpApiUsage(prev => prev + 1);
+        // 키워드형 영상이면 터진 영상 검색
+        if (result.videoType === 'keyword' && result.keywords.length > 0) {
+            // 각 키워드별로 YouTube 검색 (병렬 처리)
+            const searchPromises = result.keywords.map(async (kw) => {
+                try {
+                    const searchResponse = await fetch(
+                        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(kw.keyword)}&type=video&maxResults=50&key=${CONFIG.API_KEYS[currentKeyIndex]}`
+                    );
+                    const searchData = await searchResponse.json();
+                    
+                    if (searchData.items && searchData.items.length > 0) {
+                        // 비디오 ID 목록
+                        const videoIds = searchData.items.map(item => item.id.videoId).join(',');
+                        
+                        // 조회수 가져오기
+                        const statsResponse = await fetch(
+                            `https://www.googleapis.com/youtube/v3/videos?part=statistics&id=${videoIds}&key=${CONFIG.API_KEYS[currentKeyIndex]}`
+                        );
+                        const statsData = await statsResponse.json();
+                        
+                        // 100만 이상 조회수 필터
+                        const hitVideos = statsData.items?.filter(
+                            v => parseInt(v.statistics?.viewCount || 0) >= 1000000
+                        ) || [];
+                        
+                        const totalViews = hitVideos.reduce(
+                            (sum, v) => sum + parseInt(v.statistics?.viewCount || 0), 0
+                        );
+                        
+                        kw.hitVideos = hitVideos.length;
+                        kw.totalViews = totalViews;
+                        kw.type = hitVideos.length >= 3 ? 'hot' : hitVideos.length >= 1 ? 'potential' : 'weak';
+                    }
+                } catch (error) {
+                    console.error(`키워드 검색 실패 (${kw.keyword}):`, error);
                 }
-            } catch (error) {
-                console.error(`Trends 분석 실패 (${top5[i].keyword}):`, error);
-            }
+                return kw;
+            });
+            
+            await Promise.all(searchPromises);
         }
         
-        setExtractedKeywords(extracted);
+        setExtractedKeywords(result.keywords);
+        setVideoType(result.videoType);
+        setVideoTypeMessage(result.message);
         
     } catch (error) {
         console.error('키워드 추출 실패:', error);
@@ -2074,17 +2032,19 @@ const updateKeywordType = (index, newType) => {
             {/* 키워드 추출 모달 */}
 {isKeywordModalOpen && (
     <div 
-    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm"
-    onClick={(e) => {
-        if (e.target === e.currentTarget) {
-            setIsKeywordModalOpen(false);
-            setManualScript('');
-            setUseManualScript(false);
-            setExtractedKeywords([]);
-            setKeywordTranscriptInfo(null);
-        }
-    }}
->
+        className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+        onClick={(e) => {
+            if (e.target === e.currentTarget) {
+                setIsKeywordModalOpen(false);
+                setManualScript('');
+                setUseManualScript(false);
+                setExtractedKeywords([]);
+                setKeywordTranscriptInfo(null);
+                setVideoType(null);
+                setVideoTypeMessage(null);
+            }
+        }}
+    >
         <div className="bg-bg-card border border-gray-700 rounded-xl w-full max-w-2xl p-6 shadow-2xl max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-bold flex items-center gap-2">
@@ -2095,11 +2055,16 @@ const updateKeywordType = (index, newType) => {
                     setIsKeywordModalOpen(false);
                     setManualScript('');
                     setUseManualScript(false);
+                    setExtractedKeywords([]);
+                    setKeywordTranscriptInfo(null);
+                    setVideoType(null);
+                    setVideoTypeMessage(null);
                 }} className="text-gray-500 hover:text-white">
                     <Icon name="x" size={20} />
                 </button>
             </div>
             
+            {/* 영상 정보 */}
             {keywordTargetVideo && (
                 <div className="flex items-center gap-3 p-3 bg-gray-800/50 rounded-lg mb-4">
                     <img src={keywordTargetVideo.thumbnail} className="w-24 h-14 rounded bg-gray-700 object-cover" />
@@ -2122,7 +2087,7 @@ const updateKeywordType = (index, newType) => {
                                     : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
                             }`}
                         >
-                            🤖 자동 추출 (API)
+                            🤖 자동 추출
                         </button>
                         <button
                             onClick={() => setUseManualScript(true)}
@@ -2160,95 +2125,141 @@ const updateKeywordType = (index, newType) => {
                 </div>
             )}
             
-            {/* 스크립트 상태 표시 */}
-            {!isExtractingKeywords && keywordTranscriptInfo && extractedKeywords.length > 0 && (
-                <div className="mb-4 p-3 rounded-lg bg-gray-800/50 text-sm">
-                    {keywordTranscriptInfo.hasTranscript ? (
-                        <span className="text-green-400 flex items-center gap-2">
-                            <Icon name="check-circle" size={16} />
-                            {keywordTranscriptInfo.isManual ? '수동 입력' : '자동 추출'} 스크립트 포함 ({keywordTranscriptInfo.length.toLocaleString()}자)
-                        </span>
-                    ) : (
-                        <span className="text-yellow-400 flex items-center gap-2">
-                            <Icon name="alert-circle" size={16} />
-                            스크립트 없음 (제목+설명만 분석)
-                        </span>
-                    )}
-                </div>
-            )}
-            
-            {isExtractingKeywords ? (
+            {/* 로딩 중 */}
+            {isExtractingKeywords && (
                 <div className="py-10 text-center">
                     <Icon name="loader-2" size={40} className="animate-spin mx-auto mb-4 text-primary" />
                     <p className="text-gray-400">키워드 추출 중...</p>
-                    <p className="text-xs text-gray-500 mt-2">스크립트 분석 중...</p>
+                    <p className="text-xs text-gray-500 mt-2">터진 영상 검색 중...</p>
                 </div>
-            ) : extractedKeywords.length > 0 ? (
+            )}
+            
+            {/* 결과 표시 */}
+            {!isExtractingKeywords && extractedKeywords.length > 0 && (
                 <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                        <p className="text-sm text-gray-400">
-                            총 <span className="text-white font-bold">{extractedKeywords.length}개</span> 키워드 추출됨
-                        </p>
-                        <div className="flex gap-2 text-xs">
-                            <span className="flex items-center gap-1 text-orange-400">
-                                <span className="w-2 h-2 bg-orange-400 rounded-full"></span> 숏테일
-                            </span>
-                            <span className="flex items-center gap-1 text-emerald-400">
-                                <span className="w-2 h-2 bg-emerald-400 rounded-full"></span> 롱테일
-                            </span>
+                    {/* 스크립트 상태 */}
+                    {keywordTranscriptInfo && (
+                        <div className="p-3 rounded-lg bg-gray-800/50 text-sm">
+                            {keywordTranscriptInfo.hasTranscript ? (
+                                <span className="text-green-400 flex items-center gap-2">
+                                    <Icon name="check-circle" size={16} />
+                                    {keywordTranscriptInfo.isManual ? '수동 입력' : '자동 추출'} 스크립트 포함 ({keywordTranscriptInfo.length.toLocaleString()}자)
+                                </span>
+                            ) : (
+                                <span className="text-yellow-400 flex items-center gap-2">
+                                    <Icon name="alert-circle" size={16} />
+                                    스크립트 없음 (제목+태그만 분석)
+                                </span>
+                            )}
                         </div>
-                    </div>
+                    )}
                     
-                    <div className="grid grid-cols-1 gap-2">
-                        {[...extractedKeywords].sort((a, b) => {
-    // 분석된 것(shorttail, longtail) 위로, 미분석(unknown) 아래로
-    const aAnalyzed = a.type !== 'unknown' ? 1 : 0;
-    const bAnalyzed = b.type !== 'unknown' ? 1 : 0;
-    return bAnalyzed - aAnalyzed;
-}).map((kw, index) => (
-                            <div key={index} className="flex items-center justify-between p-3 bg-gray-800 rounded-lg">
-                                <div className="flex items-center gap-3">
-                                    <span className="text-lg font-mono text-gray-500 w-6">{index + 1}</span>
-                                    <div>
-                                        <span className="font-medium text-white">{kw.keyword}</span>
-                                        <span className="ml-2 text-xs text-gray-500">({kw.frequency}회)</span>
+                    {/* 영상 유형 표시 */}
+                    {videoType && (
+                        <div className={`p-3 rounded-lg text-sm ${
+                            videoType === 'keyword' 
+                                ? 'bg-blue-900/30 border border-blue-700' 
+                                : 'bg-orange-900/30 border border-orange-700'
+                        }`}>
+                            {videoType === 'keyword' ? (
+                                <span className="text-blue-400 flex items-center gap-2">
+                                    <Icon name="search" size={16} />
+                                    <strong>키워드형 영상</strong> - 검색/추천으로 유입되는 영상
+                                </span>
+                            ) : (
+                                <span className="text-orange-400 flex items-center gap-2">
+                                    <Icon name="sparkles" size={16} />
+                                    <strong>콘텐츠형 영상</strong> - {videoTypeMessage}
+                                </span>
+                            )}
+                        </div>
+                    )}
+                    
+                    {/* 키워드 카드 목록 */}
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                            <p className="text-sm text-gray-400">
+                                추출된 키워드 <span className="text-white font-bold">{extractedKeywords.length}개</span>
+                            </p>
+                            <div className="flex gap-2 text-xs">
+                                <span className="flex items-center gap-1 text-red-400">
+                                    <span className="w-2 h-2 bg-red-400 rounded-full"></span> HOT (3개+)
+                                </span>
+                                <span className="flex items-center gap-1 text-yellow-400">
+                                    <span className="w-2 h-2 bg-yellow-400 rounded-full"></span> 가능성 (1-2개)
+                                </span>
+                            </div>
+                        </div>
+                        
+                        {extractedKeywords.map((kw, index) => (
+                            <div 
+                                key={index} 
+                                className={`p-4 rounded-lg border ${
+                                    kw.type === 'hot' 
+                                        ? 'bg-red-900/20 border-red-700' 
+                                        : kw.type === 'potential'
+                                            ? 'bg-yellow-900/20 border-yellow-700'
+                                            : 'bg-gray-800 border-gray-700'
+                                }`}
+                            >
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-lg font-bold text-white">{kw.keyword}</span>
+                                        {kw.type === 'hot' && <span className="text-red-400 text-xs">🔥 HOT</span>}
+                                        {kw.type === 'potential' && <span className="text-yellow-400 text-xs">⚡ 가능성</span>}
+                                    </div>
+                                    <div className="flex gap-1">
+                                        {kw.sources.map((src, i) => (
+                                            <span key={i} className={`text-xs px-2 py-0.5 rounded ${
+                                                src === 'title' ? 'bg-blue-900/50 text-blue-400' :
+                                                src === 'tag' ? 'bg-purple-900/50 text-purple-400' :
+                                                src === 'hashtag' ? 'bg-pink-900/50 text-pink-400' :
+                                                'bg-gray-700 text-gray-400'
+                                            }`}>
+                                                {src === 'title' ? '제목' : 
+                                                 src === 'tag' ? '태그' : 
+                                                 src === 'hashtag' ? '해시태그' : '스크립트'}
+                                            </span>
+                                        ))}
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <span className={`text-xs px-2 py-1 rounded ${
-                                        kw.source === 'title' ? 'bg-blue-900/50 text-blue-400' : 
-                                        kw.source === 'script' ? 'bg-purple-900/50 text-purple-400' :
-                                        'bg-gray-700 text-gray-400'
-                                    }`}>
-                                        {kw.source === 'title' ? '제목' : kw.source === 'script' ? '스크립트' : '설명'}
-                                    </span>
-                                    <span className={`text-xs px-2 py-1 rounded font-medium ${
-    kw.type === 'shorttail' ? 'bg-orange-900/50 text-orange-400' :
-    kw.type === 'longtail' ? 'bg-emerald-900/50 text-emerald-400' :
-    'bg-gray-700 text-gray-400'
-}`}>
-    {kw.type === 'shorttail' ? '🔥 숏테일' :
-     kw.type === 'longtail' ? '🌱 롱테일' :
-     '⬜ 미분석'}
-</span>
-
-                                </div>
+                                
+                                {kw.hitVideos !== null && (
+                                    <div className="flex items-center gap-4 text-sm">
+                                        <div className="flex items-center gap-1">
+                                            <Icon name="video" size={14} className="text-gray-500" />
+                                            <span className="text-gray-400">100만+ 영상:</span>
+                                            <span className={`font-bold ${
+                                                kw.hitVideos >= 3 ? 'text-red-400' :
+                                                kw.hitVideos >= 1 ? 'text-yellow-400' :
+                                                'text-gray-500'
+                                            }`}>
+                                                {kw.hitVideos}개
+                                            </span>
+                                        </div>
+                                        {kw.totalViews > 0 && (
+                                            <div className="flex items-center gap-1">
+                                                <Icon name="eye" size={14} className="text-gray-500" />
+                                                <span className="text-gray-400">총 조회수:</span>
+                                                <span className="font-bold text-white">
+                                                    {(kw.totalViews / 10000).toFixed(0)}만
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
                     
-                    <div className="bg-yellow-900/20 border border-yellow-800 rounded-lg p-3 text-xs text-yellow-400">
-    💡 <strong>팁:</strong> 숏테일은 최근 이슈/트렌드, 롱테일은 꾸준히 검색되는 키워드예요.
-</div>
-
-{/* SerpAPI 사용량 표시 */}
-<div className="text-xs text-gray-500 text-center">
-    SerpAPI 사용량: <span className="text-white">{serpApiUsage}</span> / 250 (이번 세션)
-</div>
-
+                    {/* API 사용량 */}
+                    <div className="text-xs text-gray-500 text-center pt-2 border-t border-gray-700">
+                        YouTube API 사용량: 이번 추출에서 약 {extractedKeywords.length * 2}회 사용
+                    </div>
                 </div>
-            ) : null}
+            )}
             
+            {/* 하단 버튼 */}
             <div className="mt-6 flex justify-end gap-2">
                 <button 
                     onClick={() => {
@@ -2257,6 +2268,8 @@ const updateKeywordType = (index, newType) => {
                         setUseManualScript(false);
                         setExtractedKeywords([]);
                         setKeywordTranscriptInfo(null);
+                        setVideoType(null);
+                        setVideoTypeMessage(null);
                     }} 
                     className="px-4 py-2 text-sm text-gray-400 hover:text-white"
                 >
@@ -2276,6 +2289,7 @@ const updateKeywordType = (index, newType) => {
     </div>
 )}
 
+
    
         </div>
     );
@@ -2284,6 +2298,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
