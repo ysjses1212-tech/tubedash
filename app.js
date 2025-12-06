@@ -339,7 +339,6 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
         } else {
             let localSuccess = false;
             
-            // 1차: 로컬 서버 시도 (무료, 무제한)
             try {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -359,7 +358,6 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
                 console.log('로컬 서버 연결 안됨:', e.message);
             }
             
-            // 2차: 로컬 실패시 Supadata API (월 100회 제한)
             if (!localSuccess) {
                 try {
                     const response = await fetch(`${CONFIG.TRANSCRIPT_API}?video_id=${video.id}`);
@@ -374,7 +372,6 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
             }
         }
         
-        // 스크립트 정보 저장
         setKeywordTranscriptInfo({
             hasTranscript: transcriptText.length > 0,
             length: transcriptText.length,
@@ -383,7 +380,6 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
         
         console.log('📤 Gemini 요청:', { title: video.title, transcript: transcriptText.slice(0, 100) });
         
-        // Gemini로 키워드 추출
         const keywordResponse = await fetch(CONFIG.KEYWORD_API, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -402,54 +398,51 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
             throw new Error('키워드 추출 실패');
         }
         
-        // 키워드 배열 생성
         let keywords = keywordResult.keywords.map(kw => ({
             keyword: kw,
-            searchKeyword: kw.split('(')[0].trim(), // 괄호 번역 제거한 검색용 키워드
+            searchKeyword: kw.split('(')[0].trim(),
             sources: ['AI'],
             hitVideos: null,
             totalSearched: null,
             hitRate: null,
             hashtagCount: null,
             hitVideoList: [],
-            relatedKeywords: [], // 연관 키워드
+            relatedKeywords: [],
             type: 'unknown'
         }));
         
         setVideoType(keywordResult.videoType);
         setVideoTypeMessage(keywordResult.videoType === 'content' ? '키워드보다 콘텐츠/썸네일이 중요한 영상입니다' : null);
         
-        // 키워드형 영상이면 YouTube 검색 + 연관 키워드
         if (keywordResult.videoType === 'keyword' && keywords.length > 0) {
-            // 할당량 체크
             if (!checkQuotaAndSwitchKey()) {
                 setExtractedKeywords(keywords);
                 return;
             }
-
+            
             const searchPromises = keywords.map(async (kw) => {
                 const searchTerm = kw.searchKeyword;
-
-            const searchPromises = keywords.map(async (kw) => {
-                const searchTerm = kw.searchKeyword; // 괄호 제거된 키워드로 검색
                 
                 try {
-                    // 1. 일반 검색 (상위 50개)
                     const searchResponse = await fetch(
                         `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(searchTerm)}&type=video&maxResults=50&key=${CONFIG.API_KEYS[currentKeyIndex]}`
                     );
                     const searchData = await searchResponse.json();
                     
+                    if (searchData.error) {
+                        if (handleYouTubeApiError(searchData.error)) {
+                            return kw;
+                        }
+                    }
+                    
                     if (searchData.items && searchData.items.length > 0) {
                         const videoIds = searchData.items.map(item => item.id.videoId).join(',');
                         
-                        // 조회수 가져오기
                         const statsResponse = await fetch(
                             `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${videoIds}&key=${CONFIG.API_KEYS[currentKeyIndex]}`
                         );
                         const statsData = await statsResponse.json();
                         
-                        // 숏폼(60초 이하) 100만+ / 롱폼(60초 초과) 50만+ 필터
                         const hitVideos = statsData.items?.filter(v => {
                             const viewCount = parseInt(v.statistics?.viewCount || 0);
                             const duration = v.contentDetails?.duration || '';
@@ -474,7 +467,6 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
                         kw.hitRate = Math.round((hitVideos.length / searchData.items.length) * 100);
                         kw.type = kw.hitRate >= 50 ? 'hot' : kw.hitRate >= 20 ? 'potential' : 'weak';
                         
-                        // 터진 영상 목록 저장 (상위 10개)
                         kw.hitVideoList = hitVideos.slice(0, 10).map(v => ({
                             id: v.id,
                             title: v.snippet?.title || '',
@@ -484,7 +476,6 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
                         }));
                     }
                     
-                    // 2. 해시태그 검색 (괄호 제거된 키워드로)
                     try {
                         const hashtagResponse = await fetch(
                             `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent('#' + searchTerm)}&type=video&maxResults=1&key=${CONFIG.API_KEYS[currentKeyIndex]}`
@@ -495,7 +486,6 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
                         kw.hashtagCount = null;
                     }
                     
-                    // 3. 연관 키워드 가져오기
                     try {
                         const relatedResponse = await fetch(
                             `https://transcript-api-dtm5.onrender.com/api/related-keywords?keyword=${encodeURIComponent(searchTerm)}`
@@ -2354,6 +2344,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
