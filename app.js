@@ -2018,8 +2018,36 @@ const updateKeywordType = (index, newType) => {
                     </div>
                     
                     <div className="bg-yellow-900/20 border border-yellow-800 rounded-lg p-3 text-xs text-yellow-400">
-                        💡 <strong>팁:</strong> 숏테일은 최근 이슈/트렌드, 롱테일은 꾸준히 검색되는 키워드예요.
-                    </div>
+    💡 <strong>팁:</strong> 숏테일은 최근 이슈/트렌드, 롱테일은 꾸준히 검색되는 키워드예요.
+</div>
+
+{/* Google Trends 분석 버튼 */}
+<button
+    onClick={async () => {
+        const analyzed = await analyzeKeywordTrends(extractedKeywords);
+        setExtractedKeywords(analyzed);
+    }}
+    disabled={isAnalyzingTrends}
+    className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white rounded-lg font-bold flex items-center justify-center gap-2 transition"
+>
+    {isAnalyzingTrends ? (
+        <>
+            <Icon name="loader-2" size={16} className="animate-spin" />
+            Trends 분석 중... (상위 5개)
+        </>
+    ) : (
+        <>
+            <Icon name="trending-up" size={16} />
+            Google Trends 자동 분류 (상위 5개)
+        </>
+    )}
+</button>
+
+{/* SerpAPI 사용량 표시 */}
+<div className="text-xs text-gray-500 text-center">
+    SerpAPI 사용량: <span className="text-white">{serpApiUsage}</span> / 250 (이번 세션)
+</div>
+
                 </div>
             ) : null}
             
@@ -2058,6 +2086,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
