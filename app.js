@@ -125,6 +125,7 @@ const App = () => {
     // 키워드 추출 상태
 const [isKeywordModalOpen, setIsKeywordModalOpen] = useState(false);
 const [keywordTargetVideo, setKeywordTargetVideo] = useState(null);
+const [keywordTranscriptInfo, setKeywordTranscriptInfo] = useState(null);  // 이거 추가!
 const [extractedKeywords, setExtractedKeywords] = useState([]);
 const [isExtractingKeywords, setIsExtractingKeywords] = useState(false);
 
@@ -203,11 +204,14 @@ const STOPWORDS = [
 ];
 
 // 키워드 추출 함수
-const extractKeywordsFromText = (title, description) => {
-    // 제목과 설명 합치기
-    const fullText = `${title} ${title} ${title} ${description}`; // 제목 가중치 3배
+const extractKeywordsFromText = (allText, transcriptText = '') => {
+    // 제목+설명 텍스트에 제목 가중치 주기 (이미 allText에 포함됨)
+    let fullText = allText;
     
-    // 특수문자 제거, 소문자 변환
+    // 스크립트가 있으면 추가 (이미 allText에 포함되어 있지만, source 구분용)
+    const hasScript = transcriptText.length > 0;
+    
+    // 특수문자 제거, 정리
     const cleanText = fullText
         .replace(/[^\w\sㄱ-ㅎㅏ-ㅣ가-힣]/g, ' ')
         .replace(/\s+/g, ' ')
@@ -226,38 +230,85 @@ const extractKeywordsFromText = (title, description) => {
         }
     });
     
+    // 스크립트 텍스트에서 나온 단어 체크 (source 구분용)
+    const scriptWords = new Set();
+    if (hasScript) {
+        const cleanScript = transcriptText
+            .replace(/[^\w\sㄱ-ㅎㅏ-ㅣ가-힣]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        cleanScript.split(' ').forEach(word => {
+            if (word.length >= 2) scriptWords.add(word.toLowerCase());
+        });
+    }
+    
     // 빈도순 정렬 후 상위 15개
     const sortedKeywords = Object.entries(wordCount)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 15)
-        .map(([keyword, count]) => ({
-            keyword,
-            frequency: count,
-            type: 'unknown', // 나중에 Google Trends로 판별
-            trendType: 'unknown',
-            source: count >= 3 ? 'title' : 'description'
-        }));
+        .map(([keyword, count]) => {
+            // source 결정: 스크립트에 있으면 script, 빈도 높으면 title, 아니면 description
+            let source = 'description';
+            if (scriptWords.has(keyword.toLowerCase())) {
+                source = 'script';
+            } else if (count >= 3) {
+                source = 'title';
+            }
+            
+            return {
+                keyword,
+                frequency: count,
+                type: 'unknown',
+                trendType: 'unknown',
+                source
+            };
+        });
     
     return sortedKeywords;
 };
 
+
 // 키워드 추출 버튼 클릭
-const handleExtractKeywords = (video) => {
-    setKeywordTargetVideo(video);
-    setExtractedKeywords([]);
+const handleExtractKeywords = async (video) => {
     setIsKeywordModalOpen(true);
-    
-    // 추출 시작
+    setKeywordTargetVideo(video);
     setIsExtractingKeywords(true);
+    setExtractedKeywords([]);
+    setKeywordTranscriptInfo(null);
     
-    setTimeout(() => {
-        const keywords = extractKeywordsFromText(
-            video.title || '', 
-            video.description || ''
-        );
-        setExtractedKeywords(keywords);
+    try {
+        // 1. 제목 + 설명에서 텍스트 준비
+        let allText = `${video.title} ${video.description || ''}`;
+        let transcriptText = '';
+        
+        // 2. 스크립트(자막) 가져오기 시도
+        try {
+            const response = await fetch(`${CONFIG.TRANSCRIPT_API}?video_id=${video.videoId}`);
+            const data = await response.json();
+            if (data.success && data.transcript) {
+                transcriptText = data.transcript;
+                allText += ' ' + transcriptText;
+            }
+        } catch (e) {
+            console.log('스크립트 가져오기 실패 (제목+설명만 사용):', e);
+        }
+        
+        // 스크립트 정보 저장
+        setKeywordTranscriptInfo({
+            hasTranscript: transcriptText.length > 0,
+            length: transcriptText.length
+        });
+        
+        // 3. 키워드 추출
+        const extracted = extractKeywordsFromText(allText, transcriptText);
+        setExtractedKeywords(extracted);
+        
+    } catch (error) {
+        console.error('키워드 추출 실패:', error);
+        alert('키워드 추출에 실패했습니다.');
+    } finally {
         setIsExtractingKeywords(false);
-    }, 500); // 약간의 딜레이로 로딩 효과
+    }
 };
 
 // 키워드 저장
@@ -1769,10 +1820,28 @@ const updateKeywordType = (index, newType) => {
                 </div>
             )}
             
+            {/* 스크립트 상태 표시 */}
+            {!isExtractingKeywords && keywordTranscriptInfo && (
+                <div className="mb-4 p-3 rounded-lg bg-gray-800/50 text-sm">
+                    {keywordTranscriptInfo.hasTranscript ? (
+                        <span className="text-green-400 flex items-center gap-2">
+                            <Icon name="check-circle" size={16} />
+                            스크립트 포함 분석 ({keywordTranscriptInfo.length.toLocaleString()}자)
+                        </span>
+                    ) : (
+                        <span className="text-yellow-400 flex items-center gap-2">
+                            <Icon name="alert-circle" size={16} />
+                            스크립트 없음 (제목+설명만 분석)
+                        </span>
+                    )}
+                </div>
+            )}
+            
             {isExtractingKeywords ? (
                 <div className="py-10 text-center">
                     <Icon name="loader-2" size={40} className="animate-spin mx-auto mb-4 text-primary" />
                     <p className="text-gray-400">키워드 추출 중...</p>
+                    <p className="text-xs text-gray-500 mt-2">스크립트 가져오는 중...</p>
                 </div>
             ) : extractedKeywords.length > 0 ? (
                 <div className="space-y-4">
@@ -1802,9 +1871,11 @@ const updateKeywordType = (index, newType) => {
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <span className={`text-xs px-2 py-1 rounded ${
-                                        kw.source === 'title' ? 'bg-blue-900/50 text-blue-400' : 'bg-gray-700 text-gray-400'
+                                        kw.source === 'title' ? 'bg-blue-900/50 text-blue-400' : 
+                                        kw.source === 'script' ? 'bg-purple-900/50 text-purple-400' :
+                                        'bg-gray-700 text-gray-400'
                                     }`}>
-                                        {kw.source === 'title' ? '제목' : '설명'}
+                                        {kw.source === 'title' ? '제목' : kw.source === 'script' ? '스크립트' : '설명'}
                                     </span>
                                     <select
                                         value={kw.type}
@@ -1848,7 +1919,8 @@ const updateKeywordType = (index, newType) => {
             </div>
         </div>
     </div>
-)}    
+)}
+   
         </div>
     );
 };
@@ -1856,3 +1928,4 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
