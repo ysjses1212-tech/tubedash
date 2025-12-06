@@ -128,7 +128,10 @@ const [keywordTargetVideo, setKeywordTargetVideo] = useState(null);
 const [keywordTranscriptInfo, setKeywordTranscriptInfo] = useState(null);  
 const [manualScript, setManualScript] = useState('');  
 const [useManualScript, setUseManualScript] = useState(false); 
-const [serpApiUsage, setSerpApiUsage] = useState(0); 
+const [serpApiUsage, setSerpApiUsage] = useState(() => {
+    const saved = localStorage.getItem('serpApiUsage');
+    return saved ? parseInt(saved, 10) : 0;
+}); 
 const [isAnalyzingTrends, setIsAnalyzingTrends] = useState(false); 
 const [extractedKeywords, setExtractedKeywords] = useState([]);
 const [isExtractingKeywords, setIsExtractingKeywords] = useState(false);
@@ -207,34 +210,45 @@ const STOPWORDS = [
     '영상', '동영상', '구독', '좋아요', '알림', '설정', '채널', '링크', '댓글', '시청'
 ];
 
-// 키워드 추출 함수
+// 키워드 추출 함수 (개선된 버전)
 const extractKeywordsFromText = (allText, transcriptText = '') => {
-    // 제목+설명 텍스트에 제목 가중치 주기 (이미 allText에 포함됨)
-    let fullText = allText;
-    
-    // 스크립트가 있으면 추가 (이미 allText에 포함되어 있지만, source 구분용)
     const hasScript = transcriptText.length > 0;
     
     // 특수문자 제거, 정리
-    const cleanText = fullText
+    const cleanText = allText
         .replace(/[^\w\sㄱ-ㅎㅏ-ㅣ가-힣]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
     
-    // 단어 분리
+    // 1단어, 2단어, 3단어 조합 추출
     const words = cleanText.split(' ').filter(word => word.length >= 2);
+    const phrases = {};
     
-    // 단어 빈도 계산
-    const wordCount = {};
+    // 1단어 (명사 위주, 2글자 이상)
     words.forEach(word => {
-        const lowerWord = word.toLowerCase();
-        // 불용어 제외, 숫자만 있는 것 제외
-        if (!STOPWORDS.includes(lowerWord) && !/^\d+$/.test(word)) {
-            wordCount[word] = (wordCount[word] || 0) + 1;
+        if (word.length >= 2 && !STOPWORDS.includes(word.toLowerCase()) && !/^\d+$/.test(word)) {
+            // 조사 제거 (은, 는, 이, 가, 을, 를, 의, 에, 로, 와, 과, 도, 만, 까지 등)
+            const cleanWord = word.replace(/(은|는|이|가|을|를|의|에|로|와|과|도|만|까지|에서|으로|라고|라는|하는|있는|없는|되는|된|할|한|함|ing|tion)$/g, '');
+            if (cleanWord.length >= 2) {
+                phrases[cleanWord] = (phrases[cleanWord] || 0) + 1;
+            }
         }
     });
     
-    // 스크립트 텍스트에서 나온 단어 체크 (source 구분용)
+    // 2단어 조합 (의미있는 복합 키워드)
+    for (let i = 0; i < words.length - 1; i++) {
+        const word1 = words[i].replace(/(은|는|이|가|을|를|의|에|로)$/g, '');
+        const word2 = words[i + 1].replace(/(은|는|이|가|을|를|의|에|로)$/g, '');
+        
+        if (word1.length >= 2 && word2.length >= 2 && 
+            !STOPWORDS.includes(word1.toLowerCase()) && 
+            !STOPWORDS.includes(word2.toLowerCase())) {
+            const phrase = `${word1} ${word2}`;
+            phrases[phrase] = (phrases[phrase] || 0) + 1;
+        }
+    }
+    
+    // 스크립트 단어 체크
     const scriptWords = new Set();
     if (hasScript) {
         const cleanScript = transcriptText
@@ -246,14 +260,23 @@ const extractKeywordsFromText = (allText, transcriptText = '') => {
         });
     }
     
-    // 빈도순 정렬 후 상위 15개
-    const sortedKeywords = Object.entries(wordCount)
+    // 빈도순 정렬 후 상위 15개 (2글자 이상, 의미있는 것만)
+    const sortedKeywords = Object.entries(phrases)
+        .filter(([keyword]) => {
+            // 의미없는 키워드 필터링
+            const invalidPatterns = [
+                /^(있는|없는|하는|되는|만나는|어린|편하게|영포티란)$/,
+                /^.{1}$/, // 1글자
+                /^\d+$/, // 숫자만
+            ];
+            return !invalidPatterns.some(pattern => pattern.test(keyword));
+        })
         .sort((a, b) => b[1] - a[1])
         .slice(0, 15)
         .map(([keyword, count]) => {
-            // source 결정: 스크립트에 있으면 script, 빈도 높으면 title, 아니면 description
             let source = 'description';
-            if (scriptWords.has(keyword.toLowerCase())) {
+            if (scriptWords.has(keyword.toLowerCase()) || 
+                keyword.split(' ').some(w => scriptWords.has(w.toLowerCase()))) {
                 source = 'script';
             } else if (count >= 3) {
                 source = 'title';
@@ -270,6 +293,12 @@ const extractKeywordsFromText = (allText, transcriptText = '') => {
     
     return sortedKeywords;
 };
+
+// SerpAPI 사용량 저장
+useEffect(() => {
+    localStorage.setItem('serpApiUsage', serpApiUsage.toString());
+}, [serpApiUsage]);
+    
 // Google Trends 분석 (상위 5개 키워드)
 const analyzeKeywordTrends = async (keywords) => {
     setIsAnalyzingTrends(true);
@@ -299,28 +328,25 @@ const analyzeKeywordTrends = async (keywords) => {
 };
 
 // 키워드 추출 버튼 클릭
-// 키워드 추출 버튼 클릭
 const handleExtractKeywords = async (video, manualScriptText = null) => {
-    console.log('video 객체:', video);  
-    console.log('video keys:', Object.keys(video)); 
-    setIsExtractingKeywords(true);
+    console.log('video 객체:', video);
+    console.log('video keys:', Object.keys(video));
+    
     setIsExtractingKeywords(true);
     setExtractedKeywords([]);
     setKeywordTranscriptInfo(null);
     
     try {
         // 1. 제목 + 설명
-        let allText = `${video.title} ${video.title} ${video.title} ${video.description || ''}`; // 제목 가중치 3배
+        let allText = `${video.title} ${video.title} ${video.title} ${video.description || ''}`;
         let transcriptText = '';
         let isManual = false;
         
         // 2. 스크립트 처리
         if (manualScriptText && manualScriptText.trim()) {
-            // 수동 입력 스크립트 사용
             transcriptText = manualScriptText.trim();
             isManual = true;
         } else {
-            // 자동 API로 스크립트 가져오기 시도
             try {
                 const response = await fetch(`${CONFIG.TRANSCRIPT_API}?video_id=${video.id}`);
                 const data = await response.json();
@@ -328,16 +354,14 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
                     transcriptText = data.transcript;
                 }
             } catch (e) {
-                console.log('스크립트 가져오기 실패 (제목+설명만 사용):', e);
+                console.log('스크립트 가져오기 실패:', e);
             }
         }
         
-        // 스크립트 있으면 추가
         if (transcriptText) {
             allText += ' ' + transcriptText;
         }
         
-        // 스크립트 정보 저장
         setKeywordTranscriptInfo({
             hasTranscript: transcriptText.length > 0,
             length: transcriptText.length,
@@ -345,7 +369,27 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
         });
         
         // 3. 키워드 추출
-        const extracted = extractKeywordsFromText(allText, transcriptText);
+        let extracted = extractKeywordsFromText(allText, transcriptText);
+        
+        // 4. 자동으로 Google Trends 분석 (상위 5개)
+        const top5 = extracted.slice(0, 5);
+        for (let i = 0; i < top5.length; i++) {
+            try {
+                const response = await fetch(
+                    `${CONFIG.TRENDS_API}?keyword=${encodeURIComponent(top5[i].keyword)}`
+                );
+                const data = await response.json();
+                
+                if (data.success) {
+                    extracted[i].type = data.keyword_type;
+                    extracted[i].trendType = data.trend_type;
+                    setSerpApiUsage(prev => prev + 1);
+                }
+            } catch (error) {
+                console.error(`Trends 분석 실패 (${top5[i].keyword}):`, error);
+            }
+        }
+        
         setExtractedKeywords(extracted);
         
     } catch (error) {
@@ -355,6 +399,7 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
         setIsExtractingKeywords(false);
     }
 };
+
 
 // 키워드 저장
 const saveKeywordsToSupabase = async () => {
@@ -1996,15 +2041,16 @@ const updateKeywordType = (index, newType) => {
                                     }`}>
                                         {kw.source === 'title' ? '제목' : kw.source === 'script' ? '스크립트' : '설명'}
                                     </span>
-                                    <select
-                                        value={kw.type}
-                                        onChange={(e) => updateKeywordType(index, e.target.value)}
-                                        className="bg-gray-700 border border-gray-600 text-xs rounded px-2 py-1 outline-none"
-                                    >
-                                        <option value="unknown">분류 선택</option>
-                                        <option value="shorttail">🔥 숏테일</option>
-                                        <option value="longtail">🌱 롱테일</option>
-                                    </select>
+                                    <span className={`text-xs px-2 py-1 rounded font-medium ${
+    kw.type === 'shorttail' ? 'bg-orange-900/50 text-orange-400' :
+    kw.type === 'longtail' ? 'bg-emerald-900/50 text-emerald-400' :
+    'bg-gray-700 text-gray-400'
+}`}>
+    {kw.type === 'shorttail' ? '🔥 숏테일' :
+     kw.type === 'longtail' ? '🌱 롱테일' :
+     '분석중...'}
+</span>
+
                                 </div>
                             </div>
                         ))}
@@ -2013,28 +2059,6 @@ const updateKeywordType = (index, newType) => {
                     <div className="bg-yellow-900/20 border border-yellow-800 rounded-lg p-3 text-xs text-yellow-400">
     💡 <strong>팁:</strong> 숏테일은 최근 이슈/트렌드, 롱테일은 꾸준히 검색되는 키워드예요.
 </div>
-
-{/* Google Trends 분석 버튼 */}
-<button
-    onClick={async () => {
-        const analyzed = await analyzeKeywordTrends(extractedKeywords);
-        setExtractedKeywords(analyzed);
-    }}
-    disabled={isAnalyzingTrends}
-    className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white rounded-lg font-bold flex items-center justify-center gap-2 transition"
->
-    {isAnalyzingTrends ? (
-        <>
-            <Icon name="loader-2" size={16} className="animate-spin" />
-            Trends 분석 중... (상위 5개)
-        </>
-    ) : (
-        <>
-            <Icon name="trending-up" size={16} />
-            Google Trends 자동 분류 (상위 5개)
-        </>
-    )}
-</button>
 
 {/* SerpAPI 사용량 표시 */}
 <div className="text-xs text-gray-500 text-center">
@@ -2079,6 +2103,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
