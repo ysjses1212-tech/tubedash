@@ -261,33 +261,64 @@ const extractKeywordsFromText = (allText, transcriptText = '') => {
     // 한국어 조사/어미 패턴
     const suffixPattern = /(은|는|이|가|을|를|의|에|에서|로|으로|와|과|도|만|까지|부터|라고|라는|이라는|하는|되는|있는|없는|같은|한|할|함|된|됨|ing|tion|ment|ness|ly|er|est|ed|es|s)$/;
     
-    // 의미없는 패턴
-    const invalidPatterns = [
-        /^\d+$/, // 숫자만
-        /^[ㄱ-ㅎㅏ-ㅣ]+$/, // 자음/모음만
-        /^.{1}$/, // 1글자
-        /^(ㅋ+|ㅎ+|ㅠ+|ㅜ+|ㅇ+|ㄷ+)$/, // 감탄사
-    ];
+  // 의미없는 패턴 (동사/형용사/접속사/구어체 등)
+const invalidPatterns = [
+    /^\d+$/, // 숫자만
+    /^[ㄱ-ㅎㅏ-ㅣ]+$/, // 자음/모음만
+    /^.{1}$/, // 1글자
+    /^(ㅋ+|ㅎ+|ㅠ+|ㅜ+|ㅇ+|ㄷ+)$/, // 감탄사
+    
+    // 동사 어미 (과거/현재/미래)
+    /.+(했다|한다|하다|된다|됐다|되다|간다|갔다|온다|왔다|본다|봤다)$/,
+    /.+(먹다|먹는다|먹었다|마신다|마셨다|잔다|잤다|산다|샀다)$/,
+    /.+(있다|없다|같다|싶다|좋다|나쁘다|크다|작다|많다|적다)$/,
+    /.+(달다|달았다|붙다|붙었다|빠지다|빠졌다|들다|들었다)$/,
+    
+    // 형용사 어미
+    /.+(스럽다|답다|롭다|하다|적이다|스러운|다운|로운|적인)$/,
+    
+    // 접속사/부사
+    /^(근데|그런데|그래서|그러면|그러나|하지만|그리고|또한|즉|곧|왜냐하면)$/,
+    /^(아마|혹시|설마|과연|정말|진짜|완전|엄청|너무|매우|아주|참)$/,
+    /^(일단|우선|먼저|다음|나중|이제|지금|오늘|내일|어제|항상)$/,
+    
+    // 구어체/감탄사
+    /^(어|음|아|오|에|으음|흠|헐|와|우와|대박|쩐다)$/,
+    /.+(잖아|잖아요|거든|거든요|는데|는데요|네요|군요|구나)$/,
+    
+    // 대명사/지시어
+    /^(이거|그거|저거|여기|거기|저기|이것|그것|저것|뭐|누구|어디|언제)$/,
+    
+    // 의문사/조동사
+    /^(왜|어떻게|얼마나|무엇|어느|무슨)$/,
+];
     
     // 1단어 추출 (명사 위주)
-    words.forEach(word => {
-        // 불용어 체크
-        if (STOPWORDS.includes(word)) return;
-        
-        // 의미없는 패턴 체크
-        if (invalidPatterns.some(p => p.test(word))) return;
-        
-        // 조사/어미 제거
-        let cleanWord = word.replace(suffixPattern, '');
-        
-        // 최소 2글자
-        if (cleanWord.length < 2) return;
-        
-        // 다시 불용어 체크
-        if (STOPWORDS.includes(cleanWord)) return;
-        
-        keywordCandidates[cleanWord] = (keywordCandidates[cleanWord] || 0) + 1;
-    });
+   words.forEach(word => {
+    // 불용어 체크
+    if (STOPWORDS.includes(word)) return;
+    
+    // 의미없는 패턴 체크 (원본 단어로)
+    if (invalidPatterns.some(p => p.test(word))) return;
+    
+    // 조사/어미 제거
+    let cleanWord = word.replace(suffixPattern, '');
+    
+    // 최소 2글자
+    if (cleanWord.length < 2) return;
+    
+    // 다시 불용어 체크
+    if (STOPWORDS.includes(cleanWord)) return;
+    
+    // 다시 패턴 체크 (정리된 단어로)
+    if (invalidPatterns.some(p => p.test(cleanWord))) return;
+    
+    // 검색어로 적합한지 체크 (명사 형태)
+    // 동사/형용사 어미로 끝나면 제외
+    if (/[다요음]$/.test(cleanWord) && cleanWord.length <= 3) return;
+    
+    keywordCandidates[cleanWord] = (keywordCandidates[cleanWord] || 0) + 1;
+});
     
     // 2단어 복합 키워드 추출 (의미있는 조합만)
     for (let i = 0; i < words.length - 1; i++) {
@@ -1430,18 +1461,23 @@ const updateKeywordType = (index, newType) => {
         </button>
        <button 
     onClick={() => {
-    console.log('클릭한 비디오:', v);
-    console.log('비디오 키들:', Object.keys(v));
-    setKeywordTargetVideo(v);
-    setIsKeywordModalOpen(true);
-    setExtractedKeywords([]);
-    setManualScript('');
-    setUseManualScript(false);
-}}
- 
-    className="col-span-2 flex items-center justify-center gap-1 py-1.5 text-xs bg-yellow-900/30 hover:bg-yellow-600 text-yellow-400 hover:text-white rounded transition mt-1"
+        console.log('클릭한 비디오:', v);
+        console.log('비디오 키들:', Object.keys(v));
+        setKeywordTargetVideo(v);
+        setIsKeywordModalOpen(true);
+        setExtractedKeywords([]);
+        setManualScript('');
+        setUseManualScript(false);
+    }}
+    disabled={v.keywordsExtracted}
+    className={`col-span-2 flex items-center justify-center gap-1 py-1.5 text-xs rounded transition mt-1 ${
+        v.keywordsExtracted 
+            ? 'bg-green-900/30 text-green-400 cursor-default' 
+            : 'bg-yellow-900/30 hover:bg-yellow-600 text-yellow-400 hover:text-white'
+    }`}
 >
-    <Icon name="zap" size={12} /> 키워드 추출
+    <Icon name={v.keywordsExtracted ? "check" : "zap"} size={12} /> 
+    {v.keywordsExtracted ? '분석완료' : '키워드 추출'}
 </button>
 
     </>
@@ -1464,19 +1500,25 @@ const updateKeywordType = (index, newType) => {
         </div>
         <button 
     onClick={() => {
-    console.log('클릭한 비디오:', v);
-    console.log('비디오 키들:', Object.keys(v));
-    setKeywordTargetVideo(v);
-    setIsKeywordModalOpen(true);
-    setExtractedKeywords([]);
-    setManualScript('');
-    setUseManualScript(false);
-}}
-
-    className="w-full flex items-center justify-center gap-1 py-1.5 text-xs bg-yellow-900/30 hover:bg-yellow-600 text-yellow-400 hover:text-white rounded transition"
+        console.log('클릭한 비디오:', v);
+        console.log('비디오 키들:', Object.keys(v));
+        setKeywordTargetVideo(v);
+        setIsKeywordModalOpen(true);
+        setExtractedKeywords([]);
+        setManualScript('');
+        setUseManualScript(false);
+    }}
+    disabled={v.keywordsExtracted}
+    className={`w-full flex items-center justify-center gap-1 py-1.5 text-xs rounded transition ${
+        v.keywordsExtracted 
+            ? 'bg-green-900/30 text-green-400 cursor-default' 
+            : 'bg-yellow-900/30 hover:bg-yellow-600 text-yellow-400 hover:text-white'
+    }`}
 >
-    <Icon name="zap" size={12} /> 키워드 추출
+    <Icon name={v.keywordsExtracted ? "check" : "zap"} size={12} /> 
+    {v.keywordsExtracted ? '분석완료' : '키워드 추출'}
 </button>
+
 
     </div>
 
@@ -1977,7 +2019,18 @@ const updateKeywordType = (index, newType) => {
             )}
             {/* 키워드 추출 모달 */}
 {isKeywordModalOpen && (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div 
+    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+    onClick={(e) => {
+        if (e.target === e.currentTarget) {
+            setIsKeywordModalOpen(false);
+            setManualScript('');
+            setUseManualScript(false);
+            setExtractedKeywords([]);
+            setKeywordTranscriptInfo(null);
+        }
+    }}
+>
         <div className="bg-bg-card border border-gray-700 rounded-xl w-full max-w-2xl p-6 shadow-2xl max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-bold flex items-center gap-2">
@@ -2093,7 +2146,12 @@ const updateKeywordType = (index, newType) => {
                     </div>
                     
                     <div className="grid grid-cols-1 gap-2">
-                        {extractedKeywords.map((kw, index) => (
+                        {[...extractedKeywords].sort((a, b) => {
+    // 분석된 것(shorttail, longtail) 위로, 미분석(unknown) 아래로
+    const aAnalyzed = a.type !== 'unknown' ? 1 : 0;
+    const bAnalyzed = b.type !== 'unknown' ? 1 : 0;
+    return bAnalyzed - aAnalyzed;
+}).map((kw, index) => (
                             <div key={index} className="flex items-center justify-between p-3 bg-gray-800 rounded-lg">
                                 <div className="flex items-center gap-3">
                                     <span className="text-lg font-mono text-gray-500 w-6">{index + 1}</span>
@@ -2172,6 +2230,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
