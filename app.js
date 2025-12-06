@@ -465,12 +465,42 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
             isManual
         });
         
-        // 키워드 추출
-        const result = extractKeywordsFromText(video, transcriptText);
+        // Gemini로 키워드 추출
+        const keywordResponse = await fetch(CONFIG.KEYWORD_API, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: video.title || '',
+                description: video.description || '',
+                tags: video.tags || [],
+                transcript: transcriptText
+            })
+        });
+        
+        const keywordResult = await keywordResponse.json();
+        
+        if (!keywordResult.success || !keywordResult.keywords) {
+            throw new Error('키워드 추출 실패');
+        }
+        
+        // 키워드 배열 생성
+        let keywords = keywordResult.keywords.map(kw => ({
+            keyword: kw,
+            sources: ['AI'],
+            hitVideos: null,
+            totalSearched: null,
+            hitRate: null,
+            hashtagCount: null,
+            hitVideoList: [],
+            type: 'unknown'
+        }));
+        
+        setVideoType(keywordResult.videoType);
+        setVideoTypeMessage(keywordResult.videoType === 'content' ? '키워드보다 콘텐츠/썸네일이 중요한 영상입니다' : null);
         
         // 키워드형 영상이면 YouTube 검색
-        if (result.videoType === 'keyword' && result.keywords.length > 0) {
-            const searchPromises = result.keywords.map(async (kw) => {
+        if (keywordResult.videoType === 'keyword' && keywords.length > 0) {
+            const searchPromises = keywords.map(async (kw) => {
                 try {
                     // 1. 일반 검색 (상위 50개)
                     const searchResponse = await fetch(
@@ -527,13 +557,11 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
             await Promise.all(searchPromises);
         }
         
-        setExtractedKeywords(result.keywords);
-        setVideoType(result.videoType);
-        setVideoTypeMessage(result.message);
+        setExtractedKeywords(keywords);
         
     } catch (error) {
         console.error('키워드 추출 실패:', error);
-        alert('키워드 추출에 실패했습니다.');
+        alert('키워드 추출에 실패했습니다: ' + error.message);
     } finally {
         setIsExtractingKeywords(false);
     }
@@ -2364,6 +2392,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
