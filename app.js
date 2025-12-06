@@ -125,7 +125,9 @@ const App = () => {
     // 키워드 추출 상태
 const [isKeywordModalOpen, setIsKeywordModalOpen] = useState(false);
 const [keywordTargetVideo, setKeywordTargetVideo] = useState(null);
-const [keywordTranscriptInfo, setKeywordTranscriptInfo] = useState(null);  // 이거 추가!
+const [keywordTranscriptInfo, setKeywordTranscriptInfo] = useState(null);  
+const [manualScript, setManualScript] = useState('');  
+const [useManualScript, setUseManualScript] = useState(false);  
 const [extractedKeywords, setExtractedKeywords] = useState([]);
 const [isExtractingKeywords, setIsExtractingKeywords] = useState(false);
 
@@ -269,34 +271,45 @@ const extractKeywordsFromText = (allText, transcriptText = '') => {
 
 
 // 키워드 추출 버튼 클릭
-const handleExtractKeywords = async (video) => {
-    setIsKeywordModalOpen(true);
-    setKeywordTargetVideo(video);
+const handleExtractKeywords = async (video, manualScriptText = null) => {
     setIsExtractingKeywords(true);
     setExtractedKeywords([]);
     setKeywordTranscriptInfo(null);
     
     try {
-        // 1. 제목 + 설명에서 텍스트 준비
-        let allText = `${video.title} ${video.description || ''}`;
+        // 1. 제목 + 설명
+        let allText = `${video.title} ${video.title} ${video.title} ${video.description || ''}`; // 제목 가중치 3배
         let transcriptText = '';
+        let isManual = false;
         
-        // 2. 스크립트(자막) 가져오기 시도
-        try {
-            const response = await fetch(`${CONFIG.TRANSCRIPT_API}?video_id=${video.videoId}`);
-            const data = await response.json();
-            if (data.success && data.transcript) {
-                transcriptText = data.transcript;
-                allText += ' ' + transcriptText;
+        // 2. 스크립트 처리
+        if (manualScriptText && manualScriptText.trim()) {
+            // 수동 입력 스크립트 사용
+            transcriptText = manualScriptText.trim();
+            isManual = true;
+        } else {
+            // 자동 API로 스크립트 가져오기 시도
+            try {
+                const response = await fetch(`${CONFIG.TRANSCRIPT_API}?video_id=${video.videoId}`);
+                const data = await response.json();
+                if (data.success && data.transcript) {
+                    transcriptText = data.transcript;
+                }
+            } catch (e) {
+                console.log('스크립트 가져오기 실패 (제목+설명만 사용):', e);
             }
-        } catch (e) {
-            console.log('스크립트 가져오기 실패 (제목+설명만 사용):', e);
+        }
+        
+        // 스크립트 있으면 추가
+        if (transcriptText) {
+            allText += ' ' + transcriptText;
         }
         
         // 스크립트 정보 저장
         setKeywordTranscriptInfo({
             hasTranscript: transcriptText.length > 0,
-            length: transcriptText.length
+            length: transcriptText.length,
+            isManual: isManual
         });
         
         // 3. 키워드 추출
@@ -1269,12 +1282,19 @@ const updateKeywordType = (index, newType) => {
         >
             <Icon name="user-plus" size={12} /> {savedChannelIds.has(v.channelId) ? '저장됨' : '채널'}
         </button>
-        <button 
-            onClick={() => handleExtractKeywords(v)} 
-            className="col-span-2 flex items-center justify-center gap-1 py-1.5 text-xs bg-yellow-900/30 hover:bg-yellow-600 text-yellow-400 hover:text-white rounded transition mt-1"
-        >
-            <Icon name="zap" size={12} /> 키워드 추출
-        </button>
+       <button 
+    onClick={() => {
+        setKeywordTargetVideo(v);
+        setIsKeywordModalOpen(true);
+        setExtractedKeywords([]);
+        setManualScript('');
+        setUseManualScript(false);
+    }} 
+    className="col-span-2 flex items-center justify-center gap-1 py-1.5 text-xs bg-yellow-900/30 hover:bg-yellow-600 text-yellow-400 hover:text-white rounded transition mt-1"
+>
+    <Icon name="zap" size={12} /> 키워드 추출
+</button>
+
     </>
 
                                             ) : currentTab === 'saved_video' ? (
@@ -1294,11 +1314,18 @@ const updateKeywordType = (index, newType) => {
             </button>
         </div>
         <button 
-            onClick={() => handleExtractKeywords(v)} 
-            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs bg-yellow-900/30 hover:bg-yellow-600 text-yellow-400 hover:text-white rounded transition"
-        >
-            <Icon name="zap" size={12} /> 키워드 추출
-        </button>
+    onClick={() => {
+        setKeywordTargetVideo(v);
+        setIsKeywordModalOpen(true);
+        setExtractedKeywords([]);
+        setManualScript('');
+        setUseManualScript(false);
+    }} 
+    className="w-full flex items-center justify-center gap-1 py-1.5 text-xs bg-yellow-900/30 hover:bg-yellow-600 text-yellow-400 hover:text-white rounded transition"
+>
+    <Icon name="zap" size={12} /> 키워드 추출
+</button>
+
     </div>
 
                                             ) : (
@@ -1805,7 +1832,11 @@ const updateKeywordType = (index, newType) => {
                     <Icon name="zap" size={20} className="text-yellow-500" /> 
                     키워드 추출
                 </h2>
-                <button onClick={() => setIsKeywordModalOpen(false)} className="text-gray-500 hover:text-white">
+                <button onClick={() => {
+                    setIsKeywordModalOpen(false);
+                    setManualScript('');
+                    setUseManualScript(false);
+                }} className="text-gray-500 hover:text-white">
                     <Icon name="x" size={20} />
                 </button>
             </div>
@@ -1820,13 +1851,63 @@ const updateKeywordType = (index, newType) => {
                 </div>
             )}
             
+            {/* 스크립트 입력 방식 선택 */}
+            {!isExtractingKeywords && extractedKeywords.length === 0 && (
+                <div className="mb-4 space-y-3">
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => setUseManualScript(false)}
+                            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition ${
+                                !useManualScript 
+                                    ? 'bg-primary text-white' 
+                                    : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                            }`}
+                        >
+                            🤖 자동 추출 (API)
+                        </button>
+                        <button
+                            onClick={() => setUseManualScript(true)}
+                            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition ${
+                                useManualScript 
+                                    ? 'bg-primary text-white' 
+                                    : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                            }`}
+                        >
+                            ✍️ 스크립트 직접 입력
+                        </button>
+                    </div>
+                    
+                    {useManualScript && (
+                        <div>
+                            <textarea
+                                value={manualScript}
+                                onChange={(e) => setManualScript(e.target.value)}
+                                placeholder="유튜브에서 복사한 스크립트를 여기에 붙여넣으세요..."
+                                className="w-full h-32 bg-gray-800 border border-gray-600 rounded-lg p-3 text-sm text-white placeholder-gray-500 resize-none outline-none focus:border-primary"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                                💡 유튜브 영상 → 더보기(...) → 스크립트 보기 → 전체 복사
+                            </p>
+                        </div>
+                    )}
+                    
+                    <button
+                        onClick={() => handleExtractKeywords(keywordTargetVideo, useManualScript ? manualScript : null)}
+                        disabled={useManualScript && !manualScript.trim()}
+                        className="w-full py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg font-bold transition"
+                    >
+                        키워드 추출 시작
+                    </button>
+                </div>
+            )}
+            
             {/* 스크립트 상태 표시 */}
-            {!isExtractingKeywords && keywordTranscriptInfo && (
+            {!isExtractingKeywords && keywordTranscriptInfo && extractedKeywords.length > 0 && (
                 <div className="mb-4 p-3 rounded-lg bg-gray-800/50 text-sm">
                     {keywordTranscriptInfo.hasTranscript ? (
                         <span className="text-green-400 flex items-center gap-2">
                             <Icon name="check-circle" size={16} />
-                            스크립트 포함 분석 ({keywordTranscriptInfo.length.toLocaleString()}자)
+                            {keywordTranscriptInfo.isManual ? '수동 입력' : '자동 추출'} 스크립트 포함 ({keywordTranscriptInfo.length.toLocaleString()}자)
                         </span>
                     ) : (
                         <span className="text-yellow-400 flex items-center gap-2">
@@ -1841,7 +1922,7 @@ const updateKeywordType = (index, newType) => {
                 <div className="py-10 text-center">
                     <Icon name="loader-2" size={40} className="animate-spin mx-auto mb-4 text-primary" />
                     <p className="text-gray-400">키워드 추출 중...</p>
-                    <p className="text-xs text-gray-500 mt-2">스크립트 가져오는 중...</p>
+                    <p className="text-xs text-gray-500 mt-2">스크립트 분석 중...</p>
                 </div>
             ) : extractedKeywords.length > 0 ? (
                 <div className="space-y-4">
@@ -1851,10 +1932,10 @@ const updateKeywordType = (index, newType) => {
                         </p>
                         <div className="flex gap-2 text-xs">
                             <span className="flex items-center gap-1 text-orange-400">
-                                <span className="w-2 h-2 bg-orange-400 rounded-full"></span> 숏테일 (이슈성)
+                                <span className="w-2 h-2 bg-orange-400 rounded-full"></span> 숏테일
                             </span>
                             <span className="flex items-center gap-1 text-emerald-400">
-                                <span className="w-2 h-2 bg-emerald-400 rounded-full"></span> 롱테일 (꾸준함)
+                                <span className="w-2 h-2 bg-emerald-400 rounded-full"></span> 롱테일
                             </span>
                         </div>
                     </div>
@@ -1893,33 +1974,37 @@ const updateKeywordType = (index, newType) => {
                     
                     <div className="bg-yellow-900/20 border border-yellow-800 rounded-lg p-3 text-xs text-yellow-400">
                         💡 <strong>팁:</strong> 숏테일은 최근 이슈/트렌드, 롱테일은 꾸준히 검색되는 키워드예요.
-                        <br />나중에 Google Trends 연동하면 자동 분류됩니다!
                     </div>
                 </div>
-            ) : (
-                <div className="py-10 text-center text-gray-500">
-                    추출된 키워드가 없습니다.
-                </div>
-            )}
+            ) : null}
             
             <div className="mt-6 flex justify-end gap-2">
                 <button 
-                    onClick={() => setIsKeywordModalOpen(false)} 
+                    onClick={() => {
+                        setIsKeywordModalOpen(false);
+                        setManualScript('');
+                        setUseManualScript(false);
+                        setExtractedKeywords([]);
+                        setKeywordTranscriptInfo(null);
+                    }} 
                     className="px-4 py-2 text-sm text-gray-400 hover:text-white"
                 >
-                    취소
+                    닫기
                 </button>
-                <button 
-                    onClick={saveKeywordsToSupabase}
-                    disabled={extractedKeywords.length === 0 || isExtractingKeywords}
-                    className="px-4 py-2 bg-primary hover:bg-primary-hover text-white text-sm rounded-lg font-bold flex items-center gap-2 disabled:opacity-50"
-                >
-                    <Icon name="check" size={14} /> 키워드 저장
-                </button>
+                {extractedKeywords.length > 0 && (
+                    <button 
+                        onClick={saveKeywordsToSupabase}
+                        disabled={isExtractingKeywords}
+                        className="px-4 py-2 bg-primary hover:bg-primary-hover text-white text-sm rounded-lg font-bold flex items-center gap-2 disabled:opacity-50"
+                    >
+                        <Icon name="check" size={14} /> 키워드 저장
+                    </button>
+                )}
             </div>
         </div>
     </div>
 )}
+
    
         </div>
     );
@@ -1928,4 +2013,5 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
