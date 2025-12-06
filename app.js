@@ -287,6 +287,52 @@ const analyzeKeywordTrends = async (keywords) => {
     return updatedKeywords;
 };
 
+// YouTube API 할당량 체크 및 키 전환
+const checkQuotaAndSwitchKey = () => {
+    const currentUsed = keyQuotas.keys[currentKeyIndex]?.used || 0;
+    const percent = (currentUsed / CONFIG.DAILY_QUOTA_LIMIT) * 100;
+    
+    // 80% 이상이면 경고 및 다음 키로 전환
+    if (percent >= CONFIG.AUTO_SWITCH_THRESHOLD * 100) {
+        const nextKeyIndex = (currentKeyIndex + 1) % CONFIG.API_KEYS.length;
+        
+        // 다음 키도 80% 이상인지 확인
+        const nextUsed = keyQuotas.keys[nextKeyIndex]?.used || 0;
+        const nextPercent = (nextUsed / CONFIG.DAILY_QUOTA_LIMIT) * 100;
+        
+        if (nextPercent >= CONFIG.AUTO_SWITCH_THRESHOLD * 100) {
+            // 모든 키 소진
+            alert('⚠️ 모든 API 키의 할당량이 80%를 초과했습니다.\n내일 오후 4-5시(한국시간)에 리셋됩니다.');
+            return false;
+        }
+        
+        // 다음 키로 전환
+        setCurrentKeyIndex(nextKeyIndex);
+        alert(`⚠️ API 키 ${currentKeyIndex + 1}번 할당량 ${Math.round(percent)}% 도달!\n키 ${nextKeyIndex + 1}번으로 자동 전환합니다.`);
+        return true;
+    }
+    
+    return true;
+};
+
+// YouTube API 에러 처리
+const handleYouTubeApiError = (error) => {
+    if (error?.message?.includes('quota')) {
+        const nextKeyIndex = (currentKeyIndex + 1) % CONFIG.API_KEYS.length;
+        
+        if (nextKeyIndex === 0 && currentKeyIndex === CONFIG.API_KEYS.length - 1) {
+            // 모든 키 소진 (한 바퀴 돌았음)
+            alert('🚫 모든 API 키의 할당량이 소진되었습니다.\n내일 오후 4-5시(한국시간)에 리셋됩니다.');
+            return false;
+        }
+        
+        setCurrentKeyIndex(nextKeyIndex);
+        alert(`⚠️ API 키 ${currentKeyIndex + 1}번 할당량 초과!\n키 ${nextKeyIndex + 1}번으로 자동 전환합니다.`);
+        return true; // 다시 시도 가능
+    }
+    return false;
+};
+
 // 키워드 추출 버튼 클릭
 const handleExtractKeywords = async (video, manualScriptText = null) => {
     setIsExtractingKeywords(true);
@@ -386,6 +432,15 @@ const handleExtractKeywords = async (video, manualScriptText = null) => {
         
         // 키워드형 영상이면 YouTube 검색 + 연관 키워드
         if (keywordResult.videoType === 'keyword' && keywords.length > 0) {
+            // 할당량 체크
+            if (!checkQuotaAndSwitchKey()) {
+                setExtractedKeywords(keywords);
+                return;
+            }
+
+            const searchPromises = keywords.map(async (kw) => {
+                const searchTerm = kw.searchKeyword;
+
             const searchPromises = keywords.map(async (kw) => {
                 const searchTerm = kw.searchKeyword; // 괄호 제거된 키워드로 검색
                 
@@ -2310,6 +2365,7 @@ const updateKeywordType = (index, newType) => {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(<App />);
+
 
 
 
